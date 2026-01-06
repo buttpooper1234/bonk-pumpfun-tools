@@ -13,6 +13,7 @@ from solders.rpc.config import RpcAccountInfoConfig, RpcProgramAccountsConfig
 from solders.rpc.responses import GetProgramAccountsResp
 import base64
 import struct
+import json
 from collections import defaultdict
 import requests
 import re
@@ -48,6 +49,20 @@ DEFAULT_POOL = "rnMLBLnUueJveGpLCS2BGsY3McJGRXZ8bqQ8eBWbonk"
 MAX_HISTORY_LIMIT = 10
 CHECK_INTERVAL = 3
 LOG_FILE = "fresh_wallets.txt"
+
+# OpenAI API Key (optional - for enhanced GitHub analysis)
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+if OPENAI_API_KEY:
+    try:
+        from openai import OpenAI
+        openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        print("✅ OpenAI API key loaded - AI-powered GitHub analysis enabled")
+    except ImportError:
+        print("⚠️  OpenAI package not installed. Install with: pip install openai")
+        openai_client = None
+else:
+    openai_client = None
+    print("ℹ️  OpenAI API key not set - GitHub analysis will use rule-based scoring")
 
 # Global state
 client = None
@@ -1085,7 +1100,151 @@ def check_github_repo(token_address=None, repo_url=None):
     return result
 
 def analyze_repository_legitimacy(owner, repo_name, repo_data):
-    """AI-style analysis of repository legitimacy"""
+    """AI-powered analysis of repository legitimacy using OpenAI if available, otherwise rule-based"""
+    
+    # If OpenAI is available, use AI analysis
+    if openai_client:
+        return analyze_repository_with_ai(owner, repo_name, repo_data)
+    else:
+        # Fall back to rule-based analysis
+        return analyze_repository_rule_based(owner, repo_name, repo_data)
+
+def analyze_repository_with_ai(owner, repo_name, repo_data):
+    """AI-powered analysis using OpenAI"""
+    try:
+        # Gather repository data for AI analysis
+        repo_info = {
+            'name': repo_data.get('full_name', f"{owner}/{repo_name}"),
+            'description': repo_data.get('description', ''),
+            'stars': repo_data.get('stargazers_count', 0),
+            'forks': repo_data.get('forks_count', 0),
+            'created_at': repo_data.get('created_at', ''),
+            'updated_at': repo_data.get('updated_at', ''),
+            'language': repo_data.get('language', 'Unknown'),
+            'size': repo_data.get('size', 0),
+            'is_fork': repo_data.get('fork', False),
+            'is_archived': repo_data.get('archived', False),
+            'has_issues': repo_data.get('has_issues', False),
+            'has_wiki': repo_data.get('has_wiki', False),
+            'has_pages': repo_data.get('has_pages', False),
+            'default_branch': repo_data.get('default_branch', 'main')
+        }
+        
+        # Get README content if available
+        readme_content = ""
+        try:
+            readme_url = f"https://api.github.com/repos/{owner}/{repo_name}/readme"
+            readme_response = requests.get(readme_url, timeout=10)
+            if readme_response.status_code == 200:
+                readme_data = readme_response.json()
+                import base64
+                readme_content = base64.b64decode(readme_data.get('content', '')).decode('utf-8', errors='ignore')[:2000]  # Limit to 2000 chars
+        except:
+            pass
+        
+        # Get commit messages (recent activity)
+        commit_messages = []
+        try:
+            commits_url = f"https://api.github.com/repos/{owner}/{repo_name}/commits"
+            commits_response = requests.get(commits_url, params={'per_page': 5}, timeout=10)
+            if commits_response.status_code == 200:
+                commits = commits_response.json()
+                commit_messages = [commit.get('commit', {}).get('message', '')[:100] for commit in commits[:5]]
+        except:
+            pass
+        
+        # Build prompt for AI
+        prompt = f"""Analyze this GitHub repository for legitimacy and plausibility in the context of a cryptocurrency/blockchain project.
+
+Repository Information:
+- Name: {repo_info['name']}
+- Description: {repo_info['description']}
+- Stars: {repo_info['stars']}
+- Forks: {repo_info['forks']}
+- Created: {repo_info['created_at']}
+- Last Updated: {repo_info['updated_at']}
+- Primary Language: {repo_info['language']}
+- Size: {repo_info['size']} KB
+- Is Fork: {repo_info['is_fork']}
+- Is Archived: {repo_info['is_archived']}
+- Has Issues: {repo_info['has_issues']}
+- Has Wiki: {repo_info['has_wiki']}
+
+README Content (first 2000 chars):
+{readme_content if readme_content else "No README found"}
+
+Recent Commit Messages:
+{chr(10).join(commit_messages) if commit_messages else "No commits found"}
+
+Please provide a comprehensive analysis with:
+1. A plausibility score from 0-100
+2. A verdict (Highly Legitimate, Moderately Plausible, Suspicious, or Highly Suspicious)
+3. A list of green flags (positive indicators)
+4. A list of red flags (warning signs)
+5. A detailed analysis explaining your reasoning
+6. A recommendation for users considering this project
+
+Format your response as JSON with these keys:
+- "plausibility_score": (number 0-100)
+- "verdict": (string)
+- "is_legitimate": (boolean)
+- "green_flags": (array of strings)
+- "red_flags": (array of strings)
+- "detailed_analysis": (string, detailed explanation)
+- "recommendation": (string, actionable advice)
+
+Focus on indicators of legitimacy like: active development, proper documentation, community engagement, code quality signals, and red flags like: empty repos, suspicious patterns, lack of transparency, etc."""
+
+        # Call OpenAI API
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",  # Using cheaper model, can change to "gpt-4" for better analysis
+            messages=[
+                {"role": "system", "content": "You are an expert at analyzing GitHub repositories for cryptocurrency and blockchain projects. Provide objective, detailed analysis focusing on legitimacy indicators."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        
+        # Parse AI response
+        ai_response = response.choices[0].message.content
+        
+        # Try to extract JSON from response
+        try:
+            # Try to find JSON in the response
+            json_start = ai_response.find('{')
+            json_end = ai_response.rfind('}') + 1
+            if json_start >= 0 and json_end > json_start:
+                ai_data = json.loads(ai_response[json_start:json_end])
+                
+                return {
+                    'plausibility_score': ai_data.get('plausibility_score', 50),
+                    'verdict': ai_data.get('verdict', 'Unknown'),
+                    'is_legitimate': ai_data.get('is_legitimate', False),
+                    'red_flags': ai_data.get('red_flags', []),
+                    'green_flags': ai_data.get('green_flags', []),
+                    'detailed_analysis': ai_data.get('detailed_analysis', ''),
+                    'recommendation': ai_data.get('recommendation', '')
+                }
+        except:
+            # If JSON parsing fails, create structured response from text
+            return {
+                'plausibility_score': 50,
+                'verdict': '⚠️ AI Analysis Completed',
+                'is_legitimate': True,
+                'red_flags': [],
+                'green_flags': ['AI analysis performed'],
+                'detailed_analysis': ai_response,
+                'recommendation': 'Review the detailed AI analysis above.'
+            }
+            
+    except Exception as e:
+        print(f"[DEBUG] OpenAI analysis error: {e}")
+        # Fall back to rule-based if AI fails
+        return analyze_repository_rule_based(owner, repo_name, repo_data)
+
+def analyze_repository_rule_based(owner, repo_name, repo_data):
+    """Rule-based analysis of repository legitimacy (fallback when AI is not available)"""
     score = 0
     max_score = 100
     red_flags = []

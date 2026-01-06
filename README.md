@@ -8,7 +8,7 @@ Windows 98-style Solana token analysis tools for BONK/USD1 and PumpFun coins. Fe
 - **📊 Wallet Analyzer**: Analyzes profit and loss (PnL) for specific tokens
 - **💰 Funded Wallets**: Finds wallets that received funding and then bought tokens
 - **📉 Floor Price Tracker**: Monitors minimum buy prices from pool transactions
-- **🔍 GitHub Check**: AI-powered analysis of GitHub repository legitimacy
+- **🔍 GitHub Check**: AI-powered analysis of GitHub repository legitimacy (requires OpenAI API key, otherwise uses rule-based scoring)
 - **💚 PumpFun Support**: Dedicated tools for PumpFun coin analysis
 - **🎨 Retro UI**: Windows 98-style interface with theme switching (BONK orange/yellow, PumpFun green/white)
 
@@ -46,6 +46,7 @@ This will install:
 - `flask-socketio` - Real-time WebSocket communication
 - `requests` - HTTP library for API calls
 - `python-dotenv` - Environment variable management
+- `openai` - OpenAI API client (for AI-powered GitHub analysis)
 
 **Note for Windows users**: If you get permission errors, try:
 ```bash
@@ -85,6 +86,33 @@ HELIUS_API_KEY=your-actual-api-key-here
 ### Step 3: Verify Setup
 
 The application will check your API key on startup. If there's an error, it will tell you what's wrong.
+
+## 🤖 Getting an OpenAI API Key (Optional - for AI GitHub Analysis)
+
+The GitHub Check tool can use OpenAI's AI for more sophisticated repository analysis. This is **optional** - if you don't provide an OpenAI key, the tool will use rule-based analysis instead.
+
+### Step 1: Get Your OpenAI API Key
+
+1. Go to [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+2. Sign up or log in to your OpenAI account
+3. Add a payment method (required - OpenAI charges per API call)
+4. Click **"Create new secret key"**
+5. Copy your API key (it starts with `sk-...`)
+
+**Pricing**: OpenAI charges per API call. Using `gpt-4o-mini` (default) costs approximately $0.15 per 1M input tokens and $0.60 per 1M output tokens. Each GitHub analysis uses roughly 2,000-3,000 tokens, so it's very affordable.
+
+### Step 2: Add to .env File
+
+Add this line to your `.env` file:
+
+```
+OPENAI_API_KEY=sk-your-actual-api-key-here
+```
+
+**Note**: 
+- The OpenAI API key is **optional** - the tool works without it using rule-based analysis
+- If you don't provide it, you'll see a message: "OpenAI API key not set - GitHub analysis will use rule-based scoring"
+- Never commit your `.env` file to Git (it's already in `.gitignore`)
 
 ## ⚙️ Configuration (Optional)
 
