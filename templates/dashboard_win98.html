@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mugetsu-Style On-Chain Analyzer - BONK/USD1</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'MS Sans Serif', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #008080; /* Windows 98 teal, but we'll override with BONK colors */
+            background: linear-gradient(to bottom, #FF6B35 0%, #F7931E 30%, #FFD700 60%, #FF8C00 100%);
+            min-height: 100vh;
+            padding: 0;
+            margin: 0;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        /* Windows 98 Desktop */
+        .desktop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 40px; /* Space for taskbar */
+            overflow: hidden;
+            background: linear-gradient(to bottom, #FF6B35 0%, #F7931E 30%, #FFD700 60%, #FF8C00 100%);
+        }
+        
+        /* Windows 98 Taskbar */
+        .taskbar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 40px;
+            background: linear-gradient(to bottom, #C0C0C0, #808080);
+            border-top: 2px solid #FFFFFF;
+            display: flex;
+            align-items: center;
+            padding: 0 4px;
+            z-index: 10000;
+            box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .start-button {
+            height: 32px;
+            padding: 0 12px;
+            background: linear-gradient(to bottom, #C0C0C0, #808080);
+            border: 2px outset #C0C0C0;
+            border-radius: 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            font-weight: bold;
+            font-size: 11px;
+            color: #000;
+            margin-right: 4px;
+            box-shadow: inset 1px 1px 0 #FFFFFF, inset -1px -1px 0 #000000;
+        }
+        
+        .start-button:active {
+            border: 2px inset #C0C0C0;
+            box-shadow: inset 1px 1px 0 #000000, inset -1px -1px 0 #FFFFFF;
+        }
+        
+        .start-button i {
+            margin-right: 6px;
+            color: #FF6B35;
+        }
+        
+        .taskbar-tabs {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            overflow-x: auto;
+        }
+        
+        .taskbar-tab {
+            height: 28px;
+            padding: 0 12px;
+            background: linear-gradient(to bottom, #C0C0C0, #808080);
+            border: 1px outset #C0C0C0;
+            border-radius: 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            font-size: 11px;
+            color: #000;
+            white-space: nowrap;
+            min-width: 120px;
+            box-shadow: inset 1px 1px 0 #FFFFFF, inset -1px -1px 0 #000000;
+        }
+        
+        .taskbar-tab.active {
+            background: linear-gradient(to bottom, #C0C0C0, #A0A0A0);
+            border: 1px inset #C0C0C0;
+            box-shadow: inset 1px 1px 0 #000000, inset -1px -1px 0 #FFFFFF;
+        }
+        
+        .taskbar-tab.pumpfun {
+            background: linear-gradient(to bottom, #00ff88, #00cc6a);
+            color: #fff;
+            border-color: #00aa55;
+        }
+        
+        .taskbar-tab.pumpfun.active {
+            background: linear-gradient(to bottom, #00cc6a, #00ff88);
+        }
+        
+        .system-tray {
+            height: 32px;
+            padding: 0 8px;
+            background: linear-gradient(to bottom, #C0C0C0, #808080);
+            border-left: 1px solid #000;
+            display: flex;
+            align-items: center;
+            font-size: 10px;
+            color: #000;
+        }
+        
+        /* Windows 98 Window Style */
+        .window {
+            position: absolute;
+            background: #C0C0C0;
+            border: 2px outset #C0C0C0;
+            box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            min-width: 300px;
+            min-height: 200px;
+            display: none;
+            z-index: 1000;
+            resize: both;
+            overflow: auto;
+        }
+        
+        .window.active {
+            z-index: 2000;
+        }
+        
+        .window.pumpfun-theme {
+            background: #ffffff;
+            border-color: #00ff88;
+            color: #000;
+        }
+        
+        .window-titlebar {
+            height: 24px;
+            background: linear-gradient(to bottom, #0080FF, #0055AA);
+            background: linear-gradient(to bottom, #FF6B35 0%, #F7931E 50%, #FF8C00 100%); /* BONK colors */
+            border-bottom: 1px solid #000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 4px;
+            cursor: move;
+            user-select: none;
+            font-size: 11px;
+            font-weight: bold;
+            color: #fff;
+        }
+        
+        .window.pumpfun-theme .window-titlebar {
+            background: linear-gradient(to bottom, #00ff88, #00cc6a);
+            color: #000;
+        }
+        
+        .window-title {
+            flex: 1;
+            padding-left: 4px;
+            text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5);
+        }
+        
+        .window-controls {
+            display: flex;
+            gap: 2px;
+        }
+        
+        .window-btn {
+            width: 18px;
+            height: 18px;
+            border: 1px outset #C0C0C0;
+            background: #C0C0C0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            color: #000;
+            line-height: 1;
+            box-shadow: inset 1px 1px 0 #FFFFFF, inset -1px -1px 0 #000000;
+        }
+        
+        .window-btn:active {
+            border: 1px inset #C0C0C0;
+            box-shadow: inset 1px 1px 0 #000000, inset -1px -1px 0 #FFFFFF;
+        }
+        
+        .window.pumpfun-theme .window-btn {
+            background: #00cc6a;
+            border-color: #00aa55;
+            color: #000;
+        }
+        
+        .window-content {
+            padding: 8px;
+            background: #C0C0C0;
+            height: calc(100% - 24px);
+            overflow: auto;
+            font-size: 11px;
+        }
+        
+        .window.pumpfun-theme .window-content {
+            background: #ffffff;
+            color: #000;
+        }
+        
+        /* Form Elements Windows 98 Style */
+        .form-group {
+            margin-bottom: 12px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            color: #000;
+        }
+        
+        .window.pumpfun-theme .form-group label {
+            color: #000;
+        }
+        
+        input[type="text"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 4px;
+            border: 2px inset #C0C0C0;
+            background: #FFFFFF;
+            font-size: 11px;
+            font-family: 'MS Sans Serif', sans-serif;
+            box-shadow: inset 1px 1px 0 #000000, inset -1px -1px 0 #FFFFFF;
+        }
+        
+        .window.pumpfun-theme input[type="text"],
+        .window.pumpfun-theme input[type="number"],
+        .window.pumpfun-theme select {
+            background: #ffffff;
+            border-color: #00ff88;
+            color: #000;
+        }
+        
+        .btn-primary {
+            padding: 6px 16px;
+            background: linear-gradient(to bottom, #C0C0C0, #808080);
+            border: 2px outset #C0C0C0;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: bold;
+            color: #000;
+            font-family: 'MS Sans Serif', sans-serif;
+            box-shadow: inset 1px 1px 0 #FFFFFF, inset -1px -1px 0 #000000;
+        }
+        
+        .btn-primary:active {
+            border: 2px inset #C0C0C0;
+            box-shadow: inset 1px 1px 0 #000000, inset -1px -1px 0 #FFFFFF;
+        }
+        
+        .btn-primary:hover {
+            background: linear-gradient(to bottom, #D0D0D0, #909090);
+        }
+        
+        .window.pumpfun-theme .btn-primary {
+            background: linear-gradient(to bottom, #00ff88, #00cc6a);
+            border-color: #00aa55;
+            color: #000;
+        }
+        
+        .window.pumpfun-theme .btn-primary:hover {
+            background: linear-gradient(to bottom, #00cc6a, #00ff88);
+        }
+        
+        /* Results Container */
+        .results-container {
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 12px;
+            border: 2px inset #C0C0C0;
+            background: #FFFFFF;
+            padding: 8px;
+        }
+        
+        .window.pumpfun-theme .results-container {
+            background: #ffffff;
+            border-color: #00ff88;
+            color: #000;
+        }
+        
+        .wallet-item {
+            padding: 8px;
+            margin-bottom: 8px;
+            background: #F0F0F0;
+            border: 1px solid #C0C0C0;
+            font-size: 11px;
+        }
+        
+        .window.pumpfun-theme .wallet-item {
+            background: #f0fff4;
+            border-color: #00ff88;
+            color: #000;
+        }
+        
+        .empty-state, .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 11px;
+        }
+        
+        .window.pumpfun-theme .empty-state,
+        .window.pumpfun-theme .loading {
+            color: #00aa55;
+        }
+        
+        /* Start Menu */
+        .start-menu {
+            position: fixed;
+            bottom: 40px;
+            left: 0;
+            width: 200px;
+            background: #C0C0C0;
+            border: 2px outset #C0C0C0;
+            display: none;
+            z-index: 10001;
+            box-shadow: 2px -2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        .start-menu-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 11px;
+            border-bottom: 1px solid #808080;
+            display: flex;
+            align-items: center;
+        }
+        
+        .start-menu-item:hover {
+            background: #000080;
+            color: #fff;
+        }
+        
+        .start-menu-item i {
+            margin-right: 8px;
+            width: 16px;
+        }
+        
+        /* Desktop Icons */
+        .desktop-icons {
+            padding: 8px;
+        }
+        
+        .desktop-icon {
+            width: 80px;
+            height: 80px;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 8px;
+            cursor: pointer;
+            padding: 4px;
+        }
+        
+        .desktop-icon:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .desktop-icon-image {
+            width: 32px;
+            height: 32px;
+            margin-bottom: 4px;
+            color: #FF6B35;
+        }
+        
+        .desktop-icon-text {
+            font-size: 10px;
+            text-align: center;
+            color: #fff;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+    </style>
+</head>
+<body>
+    <div class="desktop" id="desktop">
+        <!-- Desktop Icons -->
+        <div class="desktop-icons">
+            <div class="desktop-icon" onclick="openWindow('fresh')">
+                <div class="desktop-icon-image"><i class="fas fa-wallet fa-2x"></i></div>
+                <div class="desktop-icon-text">Fresh Wallets</div>
+            </div>
+            <div class="desktop-icon" onclick="openWindow('analyzer')">
+                <div class="desktop-icon-image"><i class="fas fa-chart-line fa-2x"></i></div>
+                <div class="desktop-icon-text">Wallet Analyzer</div>
+            </div>
+            <div class="desktop-icon" onclick="openWindow('funded')">
+                <div class="desktop-icon-image"><i class="fas fa-money-bill-wave fa-2x"></i></div>
+                <div class="desktop-icon-text">Funded Wallets</div>
+            </div>
+            <div class="desktop-icon" onclick="openWindow('floor')">
+                <div class="desktop-icon-image"><i class="fas fa-chart-bar fa-2x"></i></div>
+                <div class="desktop-icon-text">Floor Price</div>
+            </div>
+            <div class="desktop-icon" onclick="openWindow('github')">
+                <div class="desktop-icon-image"><i class="fab fa-github fa-2x"></i></div>
+                <div class="desktop-icon-text">GitHub Check</div>
+            </div>
+            <div class="desktop-icon" onclick="openWindow('pumpfun')">
+                <div class="desktop-icon-image"><i class="fas fa-coins fa-2x" style="color: #00ff88;"></i></div>
+                <div class="desktop-icon-text">PumpFun</div>
+            </div>
+        </div>
+        
+        <!-- Windows will be dynamically created here -->
+    </div>
+    
+    <!-- Taskbar -->
+    <div class="taskbar">
+        <button class="start-button" onclick="toggleStartMenu()">
+            <i class="fas fa-flag"></i> Start
+        </button>
+        <div class="taskbar-tabs" id="taskbarTabs"></div>
+        <div class="system-tray">
+            <span id="clock"></span>
+        </div>
+    </div>
+    
+    <!-- Start Menu -->
+    <div class="start-menu" id="startMenu">
+        <div class="start-menu-item" onclick="openWindow('fresh'); closeStartMenu();">
+            <i class="fas fa-wallet"></i> Fresh Wallets
+        </div>
+        <div class="start-menu-item" onclick="openWindow('analyzer'); closeStartMenu();">
+            <i class="fas fa-chart-line"></i> Wallet Analyzer
+        </div>
+        <div class="start-menu-item" onclick="openWindow('funded'); closeStartMenu();">
+            <i class="fas fa-money-bill-wave"></i> Funded Wallets
+        </div>
+        <div class="start-menu-item" onclick="openWindow('floor'); closeStartMenu();">
+            <i class="fas fa-chart-bar"></i> Floor Price
+        </div>
+        <div class="start-menu-item" onclick="openWindow('github'); closeStartMenu();">
+            <i class="fab fa-github"></i> GitHub Check
+        </div>
+        <div class="start-menu-item" onclick="openWindow('pumpfun'); closeStartMenu();">
+            <i class="fas fa-coins"></i> PumpFun
+        </div>
+        <div class="start-menu-item" style="border-top: 2px solid #808080; margin-top: 4px;">
+            <i class="fas fa-power-off"></i> Shut Down
+        </div>
+    </div>
+    
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        // Window management
+        let windows = {};
+        let zIndexCounter = 1000;
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+        let currentDragWindow = null;
+        
+        // Window templates
+        const windowTemplates = {
+            fresh: {
+                title: '🆕 Fresh Wallet Scanner',
+                content: `
+                    <div style="background: #F0F8FF; border: 1px solid #B0C4DE; padding: 8px; margin-bottom: 8px; font-size: 11px;">
+                        <strong>📖 What this does:</strong> Scans a Solana DEX pool for wallets with 10 or fewer transactions buying from the pool.
+                    </div>
+                    <div class="form-group">
+                        <label>Pool Address</label>
+                        <input type="text" id="poolAddress" value="rnMLBLnUueJveGpLCS2BGsY3McJGRXZ8bqQ8eBWbonk" placeholder="Enter pool address">
+                    </div>
+                    <div class="form-group">
+                        <label>Transaction Limit</label>
+                        <input type="number" id="txLimit" value="10" min="1" max="50">
+                    </div>
+                    <div class="form-group">
+                        <label>Time Range</label>
+                        <select id="timeRange">
+                            <option value="0.5">30 minutes</option>
+                            <option value="1">1 hour</option>
+                            <option value="2">2 hours</option>
+                            <option value="4" selected>4 hours</option>
+                            <option value="6">6 hours</option>
+                            <option value="8">8 hours</option>
+                            <option value="12">12 hours</option>
+                        </select>
+                    </div>
+                    <button class="btn-primary" onclick="startScan()" style="margin-right: 8px;">Start Scan</button>
+                    <button class="btn-primary" onclick="stopScan()" style="margin-right: 8px;">Stop Scan</button>
+                    <button class="btn-primary" onclick="resetScan()">Reset</button>
+                    <div id="statusText" style="margin-top: 8px; font-size: 11px;">Ready</div>
+                    <div class="results-container" id="freshResults">
+                        <div class="empty-state">No fresh wallets detected yet</div>
+                    </div>
+                `,
+                isPumpfun: false
+            },
+            analyzer: {
+                title: '📊 Wallet Analyzer',
+                content: `
+                    <div style="background: #F0F8FF; border: 1px solid #B0C4DE; padding: 8px; margin-bottom: 8px; font-size: 11px;">
+                        <strong>📖 What this does:</strong> Analyzes a wallet's profit and loss (PnL) for a specific token.
+                    </div>
+                    <div class="form-group">
+                        <label>Wallet Address</label>
+                        <input type="text" id="analyzerWallet" placeholder="Enter Solana wallet address">
+                    </div>
+                    <div class="form-group">
+                        <label>Token Address</label>
+                        <input type="text" id="analyzerToken" value="DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263" placeholder="BONK token address">
+                    </div>
+                    <div class="form-group">
+                        <label>Time Range</label>
+                        <select id="analyzerTimeRange">
+                            <option value="0.5">30 minutes</option>
+                            <option value="1">1 hour</option>
+                            <option value="2">2 hours</option>
+                            <option value="4" selected>4 hours</option>
+                            <option value="6">6 hours</option>
+                            <option value="8">8 hours</option>
+                            <option value="12">12 hours</option>
+                        </select>
+                    </div>
+                    <button class="btn-primary" onclick="analyzeWallet()">Analyze Wallet</button>
+                    <div class="results-container" id="analyzerResults">
+                        <div class="empty-state">Enter wallet and token addresses to analyze</div>
+                    </div>
+                `,
+                isPumpfun: false
+            },
+            funded: {
+                title: '💰 Funded Wallets',
+                content: `
+                    <div style="background: #F0F8FF; border: 1px solid #B0C4DE; padding: 8px; margin-bottom: 8px; font-size: 11px;">
+                        <strong>📖 What this does:</strong> Finds wallets that received funding and then bought from the pool.
+                    </div>
+                    <div class="form-group">
+                        <label>Pool Address</label>
+                        <input type="text" id="fundedPool" value="rnMLBLnUueJveGpLCS2BGsY3McJGRXZ8bqQ8eBWbonk" placeholder="Enter pool address">
+                    </div>
+                    <div class="form-group">
+                        <label>Time Range</label>
+                        <select id="fundedTimeRange">
+                            <option value="0.5">30 minutes</option>
+                            <option value="1">1 hour</option>
+                            <option value="2">2 hours</option>
+                            <option value="4">4 hours</option>
+                            <option value="6">6 hours</option>
+                            <option value="8">8 hours</option>
+                            <option value="12">12 hours</option>
+                            <option value="24" selected>24 hours</option>
+                        </select>
+                    </div>
+                    <button class="btn-primary" onclick="getFundedWallets()">Get Funded Wallets</button>
+                    <div class="results-container" id="fundedResults">
+                        <div class="empty-state">Click to find wallets that received funding</div>
+                    </div>
+                `,
+                isPumpfun: false
+            },
+            floor: {
+                title: '📉 Floor Price Tracker',
+                content: `
+                    <div style="background: #F0F8FF; border: 1px solid #B0C4DE; padding: 8px; margin-bottom: 8px; font-size: 11px;">
+                        <strong>📖 What this does:</strong> Tracks the floor price (minimum buy price) from pool transactions.
+                    </div>
+                    <div class="form-group">
+                        <label>Pool Address</label>
+                        <input type="text" id="floorPool" value="rnMLBLnUueJveGpLCS2BGsY3McJGRXZ8bqQ8eBWbonk" placeholder="Enter pool address">
+                    </div>
+                    <div class="form-group">
+                        <label>Time Range</label>
+                        <select id="floorTimeRange">
+                            <option value="0.5">30 minutes</option>
+                            <option value="1">1 hour</option>
+                            <option value="2">2 hours</option>
+                            <option value="4" selected>4 hours</option>
+                            <option value="6">6 hours</option>
+                            <option value="8">8 hours</option>
+                            <option value="12">12 hours</option>
+                        </select>
+                    </div>
+                    <button class="btn-primary" onclick="getFloorPrice()">Get Floor Price</button>
+                    <div class="results-container" id="floorResults">
+                        <div class="empty-state">Enter pool address and click to get floor price</div>
+                    </div>
+                `,
+                isPumpfun: false
+            },
+            github: {
+                title: '🔍 GitHub Repository Check',
+                content: `
+                    <div style="background: #F0F8FF; border: 1px solid #B0C4DE; padding: 8px; margin-bottom: 8px; font-size: 11px;">
+                        <strong>📖 What this does:</strong> Checks if a token has an associated GitHub repository.
+                    </div>
+                    <div class="form-group">
+                        <label>Token Address</label>
+                        <input type="text" id="githubToken" placeholder="Enter token mint address">
+                    </div>
+                    <div class="form-group">
+                        <label>GitHub Repository URL (Optional)</label>
+                        <input type="text" id="githubRepo" placeholder="e.g., https://github.com/user/repo">
+                    </div>
+                    <button class="btn-primary" onclick="checkGitHub()">Check GitHub</button>
+                    <div class="results-container" id="githubResults">
+                        <div class="empty-state">Enter token address to check for GitHub repository</div>
+                    </div>
+                `,
+                isPumpfun: false
+            },
+            pumpfun: {
+                title: '💚 PumpFun Scanner',
+                content: `
+                    <div style="background: #f0fff4; border: 1px solid #00ff88; padding: 8px; margin-bottom: 8px; font-size: 11px; color: #000;">
+                        <strong>📖 What this does:</strong> Scans PumpFun platform for new token launches. Filters for PumpFun-only coins.
+                    </div>
+                    <div class="form-group">
+                        <label>PumpFun Token Address</label>
+                        <input type="text" id="pumpfunToken" placeholder="Enter PumpFun token address">
+                    </div>
+                    <div class="form-group">
+                        <label>Time Range</label>
+                        <select id="pumpfunTimeRange">
+                            <option value="0.5">30 minutes</option>
+                            <option value="1">1 hour</option>
+                            <option value="2">2 hours</option>
+                            <option value="4" selected>4 hours</option>
+                            <option value="6">6 hours</option>
+                            <option value="8">8 hours</option>
+                            <option value="12">12 hours</option>
+                        </select>
+                    </div>
+                    <button class="btn-primary" onclick="scanPumpFun()">Scan PumpFun</button>
+                    <div class="results-container" id="pumpfunResults">
+                        <div class="empty-state">Enter PumpFun token address to scan</div>
+                    </div>
+                `,
+                isPumpfun: true
+            }
+        };
+        
+        function openWindow(windowId) {
+            if (windows[windowId]) {
+                focusWindow(windowId);
+                return;
+            }
+            
+            const template = windowTemplates[windowId];
+            if (!template) return;
+            
+            const window = document.createElement('div');
+            window.className = 'window active';
+            window.id = windowId + '-window';
+            if (template.isPumpfun) {
+                window.classList.add('pumpfun-theme');
+            }
+            window.style.top = '50px';
+            window.style.left = '50px';
+            window.style.width = '600px';
+            window.style.height = '500px';
+            
+            window.innerHTML = `
+                <div class="window-titlebar" onmousedown="startDrag(event, '${windowId}')">
+                    <div class="window-title">${template.title}</div>
+                    <div class="window-controls">
+                        <div class="window-btn" onclick="minimizeWindow('${windowId}')">_</div>
+                        <div class="window-btn" onclick="maximizeWindow('${windowId}')">□</div>
+                        <div class="window-btn" onclick="closeWindow('${windowId}')">×</div>
+                    </div>
+                </div>
+                <div class="window-content">
+                    ${template.content}
+                </div>
+            `;
+            
+            document.getElementById('desktop').appendChild(window);
+            windows[windowId] = window;
+            focusWindow(windowId);
+            updateTaskbar();
+            
+            // Initialize content if needed
+            if (windowId === 'fresh') {
+                initFreshWallet();
+            }
+        }
+        
+        function closeWindow(windowId) {
+            if (windows[windowId]) {
+                windows[windowId].remove();
+                delete windows[windowId];
+                updateTaskbar();
+            }
+        }
+        
+        function minimizeWindow(windowId) {
+            if (windows[windowId]) {
+                windows[windowId].style.display = 'none';
+                updateTaskbar();
+            }
+        }
+        
+        function maximizeWindow(windowId) {
+            if (windows[windowId]) {
+                const win = windows[windowId];
+                if (win.style.width === '100%') {
+                    win.style.width = '600px';
+                    win.style.height = '500px';
+                } else {
+                    win.style.width = '100%';
+                    win.style.height = 'calc(100% - 40px)';
+                    win.style.top = '0';
+                    win.style.left = '0';
+                }
+            }
+        }
+        
+        function focusWindow(windowId) {
+            zIndexCounter++;
+            if (windows[windowId]) {
+                document.querySelectorAll('.window').forEach(w => w.classList.remove('active'));
+                windows[windowId].classList.add('active');
+                windows[windowId].style.zIndex = zIndexCounter;
+                windows[windowId].style.display = 'block';
+                updateTaskbar();
+            }
+        }
+        
+        function startDrag(e, windowId) {
+            if (e.target.closest('.window-controls')) return;
+            isDragging = true;
+            currentDragWindow = windows[windowId];
+            const rect = currentDragWindow.getBoundingClientRect();
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
+            focusWindow(windowId);
+        }
+        
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging && currentDragWindow) {
+                currentDragWindow.style.left = (e.clientX - dragOffset.x) + 'px';
+                currentDragWindow.style.top = (e.clientY - dragOffset.y) + 'px';
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            currentDragWindow = null;
+        });
+        
+        function updateTaskbar() {
+            const taskbarTabs = document.getElementById('taskbarTabs');
+            taskbarTabs.innerHTML = '';
+            
+            Object.keys(windows).forEach(windowId => {
+                const template = windowTemplates[windowId];
+                const tab = document.createElement('div');
+                tab.className = 'taskbar-tab';
+                if (template.isPumpfun) {
+                    tab.classList.add('pumpfun');
+                }
+                if (windows[windowId].classList.contains('active')) {
+                    tab.classList.add('active');
+                }
+                tab.textContent = template.title;
+                tab.onclick = () => {
+                    if (windows[windowId].style.display === 'none') {
+                        windows[windowId].style.display = 'block';
+                    }
+                    focusWindow(windowId);
+                };
+                taskbarTabs.appendChild(tab);
+            });
+        }
+        
+        function toggleStartMenu() {
+            const menu = document.getElementById('startMenu');
+            menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+        }
+        
+        function closeStartMenu() {
+            document.getElementById('startMenu').style.display = 'none';
+        }
+        
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.start-button') && !e.target.closest('.start-menu')) {
+                closeStartMenu();
+            }
+        });
+        
+        // Clock
+        function updateClock() {
+            const now = new Date();
+            const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            document.getElementById('clock').textContent = time;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+        
+        // Socket.IO Integration
+        const socket = io();
+        let walletCount = 0;
+        
+        socket.on('connect', () => {
+            console.log('Connected');
+            updateStatus('Connected', false);
+        });
+        
+        socket.on('fresh_wallet', (data) => {
+            walletCount++;
+            addFreshWallet(data);
+        });
+        
+        socket.on('status', (data) => {
+            updateStatus(data.message, data.scanning);
+        });
+        
+        socket.on('error', (data) => {
+            alert('Error: ' + data.message);
+            updateStatus('Error occurred', false);
+        });
+        
+        function updateStatus(message, isScanning) {
+            const statusEl = document.getElementById('statusText');
+            if (statusEl) {
+                statusEl.textContent = message;
+            }
+        }
+        
+        function addFreshWallet(data) {
+            const results = document.getElementById('freshResults');
+            if (!results) return;
+            
+            const emptyState = results.querySelector('.empty-state');
+            if (emptyState) emptyState.remove();
+            
+            const item = document.createElement('div');
+            item.className = 'wallet-item';
+            item.innerHTML = `
+                <div class="address">${data.wallet}</div>
+                <div class="info">
+                    <span>📊 Txs: ${data.tx_count}</span>
+                    <span>⏰ ${data.tx_time || 'N/A'}</span>
+                </div>
+                <a href="https://solscan.io/account/${data.wallet}" target="_blank">View Wallet</a>
+                <a href="https://solscan.io/tx/${data.tx_sig}" target="_blank">View Transaction</a>
+            `;
+            results.insertBefore(item, results.firstChild);
+        }
+        
+        async function startScan() {
+            const poolAddress = document.getElementById('poolAddress').value.trim();
+            const txLimit = parseInt(document.getElementById('txLimit').value) || 10;
+            const timeRange = parseFloat(document.getElementById('timeRange').value) || 4;
+            
+            try {
+                const response = await fetch('/api/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({pool: poolAddress, limit: txLimit, hours: timeRange})
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    document.getElementById('freshResults').innerHTML = '<div class="empty-state">Scanning...</div>';
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function stopScan() {
+            try {
+                await fetch('/api/stop', {method: 'POST'});
+                updateStatus('Scan stopped', false);
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function resetScan() {
+            try {
+                await fetch('/api/stop', {method: 'POST'});
+            } catch (error) {
+                // Ignore if already stopped
+            }
+            
+            document.getElementById('freshResults').innerHTML = '<div class="empty-state">No fresh wallets detected yet</div>';
+            updateStatus('Ready to scan', false);
+            walletCount = 0;
+        }
+        
+        async function analyzeWallet() {
+            const wallet = document.getElementById('analyzerWallet').value.trim();
+            const token = document.getElementById('analyzerToken').value.trim();
+            const timeRange = parseFloat(document.getElementById('analyzerTimeRange').value) || 4;
+            const results = document.getElementById('analyzerResults');
+            results.innerHTML = '<div class="loading">Analyzing wallet PnL...</div>';
+            
+            if (!wallet) {
+                results.innerHTML = '<div class="empty-state">Please enter a wallet address</div>';
+                return;
+            }
+            
+            if (!token) {
+                results.innerHTML = '<div class="empty-state">Please enter a token address</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/wallet_analyzer', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({wallet, token, timeRange})
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    if (data.data && data.data.wallet) {
+                        displayAnalyzer(data.data, results);
+                    } else {
+                        results.innerHTML = `
+                            <div class="wallet-item">
+                                <div class="address">Wallet: ${wallet.substring(0, 20)}...</div>
+                                <div class="info">
+                                    <span>Token: ${token.substring(0, 20)}...</span>
+                                    <span>Time Range: ${timeRange} hours</span>
+                                </div>
+                                <div style="margin-top: 10px; color: #666; font-size: 0.9em;">
+                                    Wallet analyzer: Would parse last 300 transactions to calculate PnL.
+                                    Currently showing placeholder - full implementation requires transaction parsing.
+                                </div>
+                                <a href="https://solscan.io/account/${wallet}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-top: 10px; display: inline-block;">View Wallet on Solscan →</a>
+                            </div>
+                        `;
+                    }
+                } else {
+                    results.innerHTML = `<div class="empty-state">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function getFundedWallets() {
+            const pool = document.getElementById('fundedPool').value.trim();
+            const timeRange = parseFloat(document.getElementById('fundedTimeRange').value) || 24;
+            const results = document.getElementById('fundedResults');
+            results.innerHTML = '<div class="loading">Analyzing funded wallets...</div>';
+            
+            if (!pool) {
+                results.innerHTML = '<div class="empty-state">Please enter a pool address</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/funded', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({pool, hours: timeRange, timeRange: timeRange})
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    if (data.wallets && data.wallets.length > 0) {
+                        displayFunded(data.wallets, results);
+                    } else {
+                        results.innerHTML = `
+                            <div class="wallet-item">
+                                <div class="address">Pool: ${pool.substring(0, 20)}...</div>
+                                <div class="info">
+                                    <span>Time Range: ${timeRange} hours</span>
+                                    <span>Status: Analysis complete</span>
+                                </div>
+                                <div style="margin-top: 10px; color: #666; font-size: 0.9em;">
+                                    Funded wallets: Would scan for wallets that received funding and then bought from the pool.
+                                    Currently showing placeholder - full implementation requires funding transaction analysis.
+                                </div>
+                                <a href="https://solscan.io/account/${pool}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-top: 10px; display: inline-block;">View Pool on Solscan →</a>
+                            </div>
+                        `;
+                    }
+                } else {
+                    results.innerHTML = `<div class="empty-state">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function getFloorPrice() {
+            const pool = document.getElementById('floorPool').value.trim();
+            const timeRange = parseFloat(document.getElementById('floorTimeRange').value) || 4;
+            const results = document.getElementById('floorResults');
+            results.innerHTML = '<div class="loading">Tracking floor price...</div>';
+            
+            if (!pool) {
+                results.innerHTML = '<div class="empty-state">Please enter a pool address</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/floor_price', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({pool, hours: timeRange, timeRange: timeRange})
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    if (data.data) {
+                        const floor = data.data;
+                        results.innerHTML = `
+                            <div class="wallet-item">
+                                <div class="address" style="font-size: 1.2em; font-weight: bold; color: #FF6B35;">
+                                    📉 Floor Price: ${floor.floor_price ? floor.floor_price.toFixed(9) : 'N/A'} SOL per token
+                                </div>
+                                <div class="info">
+                                    <span>Current Price: ${floor.current_price ? floor.current_price.toFixed(9) : 'N/A'} SOL</span>
+                                    <span>Time Range: ${timeRange} hours</span>
+                                </div>
+                                <div class="info" style="margin-top: 10px;">
+                                    <span>Floor Price Time: ${floor.floor_time || 'N/A'}</span>
+                                    <span>Total Buys Analyzed: ${floor.total_buys_analyzed || 0}</span>
+                                </div>
+                                ${floor.floor_tx ? `<a href="https://solscan.io/tx/${floor.floor_tx}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-top: 10px; display: inline-block;">View Floor Price Transaction →</a>` : ''}
+                                <a href="https://solscan.io/account/${pool}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-top: 10px; display: inline-block; margin-left: 10px;">View Pool →</a>
+                            </div>
+                        `;
+                    } else {
+                        results.innerHTML = '<div class="empty-state">No buy transactions found in the specified time range</div>';
+                    }
+                } else {
+                    results.innerHTML = `<div class="empty-state">Error: ${data.error || 'Failed to get floor price'}</div>`;
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function checkGitHub() {
+            const token = document.getElementById('githubToken').value.trim();
+            const repo = document.getElementById('githubRepo').value.trim();
+            const results = document.getElementById('githubResults');
+            results.innerHTML = '<div class="loading">Checking GitHub repository...</div>';
+            
+            if (!token && !repo) {
+                results.innerHTML = '<div class="empty-state">Please enter a token address or GitHub repository URL</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/github_check', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({token, repo})
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    displayGitHub(data, results);
+                } else {
+                    results.innerHTML = `<div class="empty-state">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function scanPumpFun() {
+            const token = document.getElementById('pumpfunToken').value.trim();
+            const timeRange = parseFloat(document.getElementById('pumpfunTimeRange').value) || 4;
+            const results = document.getElementById('pumpfunResults');
+            results.innerHTML = '<div class="loading">Scanning PumpFun tokens...</div>';
+            
+            if (!token) {
+                results.innerHTML = '<div class="empty-state">Please enter a PumpFun token address</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/pumpfun_scan', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({token, timeRange})
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    displayPumpFun(data, results);
+                } else {
+                    results.innerHTML = `<div class="empty-state">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
+            }
+        }
+        
+        function displayPumpFun(data, container) {
+            if (!data || !data.tokens || data.tokens.length === 0) {
+                container.innerHTML = '<div class="empty-state">No PumpFun tokens found</div>';
+                return;
+            }
+            container.innerHTML = data.tokens.map(t => `
+                <div class="wallet-item">
+                    <div class="address" style="font-weight: bold; color: #00aa55;">${t.name || 'Token'}</div>
+                    <div class="info" style="margin-top: 10px;">
+                        <span><strong>Address:</strong> ${t.address || 'N/A'}</span>
+                    </div>
+                    <div class="info" style="margin-top: 5px;">
+                        <span><strong>Price:</strong> ${t.price || 'N/A'} SOL</span>
+                        <span><strong>Market Cap:</strong> ${t.market_cap || 'N/A'}</span>
+                    </div>
+                    <a href="https://pump.fun/${t.address}" target="_blank" style="color: #00ff88; text-decoration: none; margin-top: 10px; display: inline-block; font-weight: bold;">View on PumpFun →</a>
+                </div>
+            `).join('');
+        }
+        
+        function displayGitHub(data, container) {
+            if (!data || !data.repo) {
+                container.innerHTML = '<div class="empty-state">No GitHub repository found</div>';
+                return;
+            }
+            container.innerHTML = `
+                <div class="wallet-item">
+                    <div class="address" style="font-weight: bold;">${data.repo.name || 'Repository'}</div>
+                    <div class="info" style="margin-top: 10px;">
+                        <span><strong>URL:</strong> <a href="${data.repo.url}" target="_blank">${data.repo.url}</a></span>
+                    </div>
+                    <div class="info" style="margin-top: 5px;">
+                        <span><strong>Stars:</strong> ${data.repo.stars || 0}</span>
+                        <span><strong>Forks:</strong> ${data.repo.forks || 0}</span>
+                        <span><strong>Last Updated:</strong> ${data.repo.last_updated || 'N/A'}</span>
+                    </div>
+                    <div class="info" style="margin-top: 5px;">
+                        <span><strong>Status:</strong> ${data.repo.exists ? '✅ Found' : '❌ Not Found'}</span>
+                        <span><strong>Verified:</strong> ${data.repo.verified ? '✅ Yes' : '❌ No'}</span>
+                    </div>
+                    ${data.repo.description ? `<div style="margin-top: 10px; color: #666; font-size: 0.9em;">${data.repo.description}</div>` : ''}
+                </div>
+            `;
+        }
+        
+        function displayAnalyzer(data, container) {
+            if (!data) {
+                container.innerHTML = '<div class="empty-state">No data available</div>';
+                return;
+            }
+            const pnlColor = data.pnl >= 0 ? '#00ff00' : '#ff0000';
+            const pnlSign = data.pnl >= 0 ? '+' : '';
+            container.innerHTML = `
+                <div class="wallet-item">
+                    <div class="address" style="font-size: 1.1em; font-weight: bold;">Wallet: ${data.wallet.substring(0, 20)}...</div>
+                    <div class="info" style="margin-top: 15px;">
+                        <span><strong>Total Bought:</strong> ${data.total_bought || 0} tokens</span>
+                        <span><strong>Total Sold:</strong> ${data.total_sold || 0} tokens</span>
+                        <span><strong>Current Balance:</strong> ${data.current_balance || 0} tokens</span>
+                    </div>
+                    <div class="info" style="margin-top: 10px;">
+                        <span><strong>Buy Count:</strong> ${data.buy_count || 0}</span>
+                        <span><strong>Sell Count:</strong> ${data.sell_count || 0}</span>
+                    </div>
+                    <div class="info" style="margin-top: 10px;">
+                        <span><strong>Avg Buy Price:</strong> ${data.avg_buy_price ? data.avg_buy_price.toFixed(9) : 0} SOL</span>
+                        <span><strong>Avg Sell Price:</strong> ${data.avg_sell_price ? data.avg_sell_price.toFixed(9) : 0} SOL</span>
+                    </div>
+                    <div class="info" style="margin-top: 10px;">
+                        <span><strong>Total SOL Spent:</strong> ${data.total_sol_spent || 0} SOL</span>
+                        <span><strong>Total SOL Received:</strong> ${data.total_sol_received || 0} SOL</span>
+                    </div>
+                    <div class="info" style="margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.1); border-radius: 5px;">
+                        <span style="font-size: 1.2em; font-weight: bold; color: ${pnlColor};">
+                            💰 Total PnL: ${pnlSign}${data.pnl || 0} SOL
+                        </span>
+                        <span style="margin-left: 20px;">
+                            Realized: ${data.realized_pnl || 0} SOL | Unrealized: ${data.unrealized_pnl || 0} SOL
+                        </span>
+                    </div>
+                    <a href="https://solscan.io/account/${data.wallet}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-top: 10px; display: inline-block;">View Wallet on Solscan →</a>
+                </div>
+            `;
+        }
+        
+        function displayFunded(wallets, container) {
+            if (!wallets || wallets.length === 0) {
+                container.innerHTML = '<div class="empty-state">No funded wallets found</div>';
+                return;
+            }
+            container.innerHTML = wallets.map(w => `
+                <div class="wallet-item">
+                    <div class="address" style="font-weight: bold;">${w.wallet ? w.wallet.substring(0, 20) + '...' : 'N/A'}</div>
+                    <div class="info" style="margin-top: 10px;">
+                        <span><strong>Funding Amount:</strong> ${w.funding_amount || 0} SOL</span>
+                        <span><strong>Funding Time:</strong> ${w.funding_time || 'N/A'}</span>
+                    </div>
+                    <div class="info" style="margin-top: 5px;">
+                        <span><strong>Buy Time:</strong> ${w.buy_time || 'N/A'}</span>
+                    </div>
+                    <div style="margin-top: 10px;">
+                        ${w.funding_tx ? `<a href="https://solscan.io/tx/${w.funding_tx}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-right: 10px;">View Funding TX →</a>` : ''}
+                        ${w.buy_tx ? `<a href="https://solscan.io/tx/${w.buy_tx}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-right: 10px;">View Buy TX →</a>` : ''}
+                        <a href="https://solscan.io/account/${w.wallet}" target="_blank" style="color: #FF6B35; text-decoration: none;">View Wallet →</a>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function initFreshWallet() {
+            // Initialize fresh wallet window if needed
+        }
+    </script>
+</body>
+</html>
+

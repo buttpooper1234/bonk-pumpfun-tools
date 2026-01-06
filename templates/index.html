@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fresh Wallet Scanner - Solana</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        .control-panel {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            flex: 1;
+        }
+        
+        .btn-start {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .btn-start:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.3);
+        }
+        
+        .btn-stop {
+            background: #f44336;
+            color: white;
+        }
+        
+        .btn-stop:hover {
+            background: #da190b;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(244, 67, 54, 0.3);
+        }
+        
+        .btn-stop:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .status-bar {
+            background: white;
+            padding: 15px 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ccc;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.active {
+            background: #4CAF50;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .panel {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            padding: 25px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .panel h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .wallet-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border-left: 4px solid #4CAF50;
+            transition: transform 0.2s;
+        }
+        
+        .wallet-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .wallet-item .wallet-address {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            word-break: break-all;
+        }
+        
+        .wallet-item .wallet-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .wallet-item .wallet-info span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .wallet-item a {
+            color: #667eea;
+            text-decoration: none;
+            margin-top: 10px;
+            display: inline-block;
+        }
+        
+        .wallet-item a:hover {
+            text-decoration: underline;
+        }
+        
+        .log-content {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        
+        .empty-state::before {
+            content: "🔍";
+            font-size: 3em;
+            display: block;
+            margin-bottom: 10px;
+        }
+        
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🕵️ Fresh Wallet Scanner</h1>
+            <p>Monitor Solana pools for fresh wallet activity</p>
+        </div>
+        
+        <div class="control-panel">
+            <div class="form-group">
+                <label for="poolAddress">Pool Address (Raydium/DEX Pool)</label>
+                <input type="text" id="poolAddress" placeholder="Enter pool address..." value="rnMLBLnUueJveGpLCS2BGsY3McJGRXZ8bqQ8eBWbonk">
+            </div>
+            <div class="form-group">
+                <label for="txLimit">Max Transaction Limit (Fresh Wallet Threshold)</label>
+                <input type="number" id="txLimit" value="10" min="1" max="100">
+            </div>
+            <div class="button-group">
+                <button class="btn-start" id="startBtn" onclick="startScan()">▶ Start Scan</button>
+                <button class="btn-stop" id="stopBtn" onclick="stopScan()" disabled>⏹ Stop Scan</button>
+            </div>
+        </div>
+        
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Ready to scan</span>
+            </div>
+            <div id="progressText"></div>
+        </div>
+        
+        <div class="main-content">
+            <div class="panel">
+                <h2>🚨 Detected Fresh Wallets</h2>
+                <div id="walletsList">
+                    <div class="empty-state">No fresh wallets detected yet</div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2>📝 Activity Log</h2>
+                <div class="log-content" id="logContent">Waiting for activity...</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const socket = io();
+        let walletCount = 0;
+        
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            updateStatus('Connected', false);
+        });
+        
+        socket.on('fresh_wallet', (data) => {
+            walletCount++;
+            addWallet(data);
+            addLog(`[${data.detection_time}] Fresh wallet detected!`);
+        });
+        
+        socket.on('status', (data) => {
+            updateStatus(data.message, data.scanning);
+            addLog(data.message);
+        });
+        
+        socket.on('progress', (data) => {
+            document.getElementById('progressText').textContent = 
+                `Batch ${data.batch} | Found: ${data.found} fresh wallets`;
+        });
+        
+        socket.on('error', (data) => {
+            addLog(`[ERROR] ${data.message}`);
+            alert('Error: ' + data.message);
+            updateStatus('Error occurred', false);
+        });
+        
+        function addWallet(data) {
+            const walletsList = document.getElementById('walletsList');
+            
+            // Remove empty state if present
+            const emptyState = walletsList.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+            
+            const walletItem = document.createElement('div');
+            walletItem.className = 'wallet-item';
+            walletItem.innerHTML = `
+                <div class="wallet-address">${data.wallet}</div>
+                <div class="wallet-info">
+                    <span>📊 Txs: ${data.tx_count}</span>
+                    <span>⏰ ${data.tx_time || 'N/A'}</span>
+                </div>
+                <a href="https://solscan.io/account/${data.wallet}" target="_blank">View on Solscan →</a>
+                <a href="https://solscan.io/tx/${data.tx_sig}" target="_blank" style="margin-left: 10px;">View Transaction →</a>
+            `;
+            
+            walletsList.insertBefore(walletItem, walletsList.firstChild);
+        }
+        
+        function addLog(message) {
+            const logContent = document.getElementById('logContent');
+            const timestamp = new Date().toLocaleTimeString();
+            logContent.textContent += `[${timestamp}] ${message}\n`;
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+        
+        function updateStatus(message, isScanning) {
+            document.getElementById('statusText').textContent = message;
+            const statusDot = document.getElementById('statusDot');
+            if (isScanning) {
+                statusDot.classList.add('active');
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+            } else {
+                statusDot.classList.remove('active');
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('stopBtn').disabled = true;
+            }
+        }
+        
+        async function startScan() {
+            const poolAddress = document.getElementById('poolAddress').value.trim();
+            const txLimit = parseInt(document.getElementById('txLimit').value) || 10;
+            
+            if (!poolAddress) {
+                alert('Please enter a pool address');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        pool: poolAddress,
+                        limit: txLimit
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    addLog(`Starting scan for pool: ${poolAddress}`);
+                    addLog(`Transaction limit: ${txLimit}`);
+                    document.getElementById('walletsList').innerHTML = '<div class="empty-state">Scanning...</div>';
+                    updateStatus('Starting scan...', true);
+                } else {
+                    alert('Error: ' + data.error);
+                    addLog(`[ERROR] ${data.error}`);
+                }
+            } catch (error) {
+                alert('Error starting scan: ' + error.message);
+            }
+        }
+        
+        async function stopScan() {
+            try {
+                const response = await fetch('/api/stop', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    addLog('Scan stopped by user');
+                }
+            } catch (error) {
+                alert('Error stopping scan: ' + error.message);
+            }
+        }
+        
+        // Load logs on page load
+        async function loadLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                const data = await response.json();
+                if (data.logs) {
+                    document.getElementById('logContent').textContent = data.logs;
+                }
+            } catch (error) {
+                console.error('Error loading logs:', error);
+            }
+        }
+        
+        loadLogs();
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mugetsu-Style On-Chain Analyzer - BONK/USD1</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(to bottom, #FF6B35 0%, #F7931E 30%, #FFD700 60%, #FF8C00 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+            position: relative;
+        }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(circle at 20% 50%, rgba(255, 107, 53, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(199, 30, 58, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 40% 20%, rgba(255, 215, 0, 0.2) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .vista-window {
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5) inset, 0 8px 16px rgba(0, 0, 0, 0.3);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        
+        .window-titlebar {
+            background: linear-gradient(to bottom, #FF6B35 0%, #F7931E 50%, #FF8C00 100%);
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 10px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.2);
+            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.3) inset;
+            cursor: move;
+        }
+        
+        .window-title {
+            color: white;
+            font-weight: 600;
+            font-size: 13px;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+            flex: 1;
+        }
+        
+        .window-controls {
+            display: flex;
+            gap: 2px;
+        }
+        
+        .window-btn {
+            width: 16px;
+            height: 16px;
+            border: 1px solid rgba(0, 0, 0, 0.3);
+            border-radius: 3px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: white;
+            text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset;
+            transition: all 0.2s;
+        }
+        
+        .window-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .window-btn.close {
+            background: linear-gradient(to bottom, #FF4444, #CC0000);
+        }
+        
+        .window-btn.close:hover {
+            background: linear-gradient(to bottom, #FF6666, #FF0000);
+        }
+        
+        .window-content {
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.98);
+        }
+        
+        .header {
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+            box-shadow: none;
+            margin-bottom: 0;
+            text-align: center;
+            position: relative;
+        }
+        
+        .header h1 {
+            background: linear-gradient(135deg, #FF6B35 0%, #F7931E 50%, #FFD700 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            font-weight: 700;
+        }
+        
+        .header p {
+            color: rgba(0, 0, 0, 0.7);
+            font-size: 1.1em;
+            text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5);
+        }
+        
+        .tabs {
+            background: rgba(240, 240, 240, 0.95);
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            border-radius: 0;
+            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5) inset, 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            display: flex;
+            overflow-x: auto;
+            padding: 8px;
+            background: linear-gradient(to bottom, #F0F0F0, #E0E0E0);
+        }
+        
+        .tab-btn {
+            padding: 8px 16px;
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            background: linear-gradient(to bottom, #FFFFFF, #F0F0F0);
+            border-radius: 4px 4px 0 0;
+            margin-right: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            white-space: nowrap;
+            color: #333;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            font-size: 13px;
+            position: relative;
+            top: 1px;
+        }
+        
+        .tab-btn:hover {
+            background: linear-gradient(to bottom, #FFFFFF, #F5F5F5);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+        }
+        
+        .tab-btn.active {
+            background: linear-gradient(to bottom, #FF6B35, #F7931E);
+            color: white;
+            border-color: rgba(0, 0, 0, 0.3);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+            top: 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.98);
+        }
+        
+        .tab-content {
+            display: none;
+            background: rgba(255, 255, 255, 0.98);
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            border-top: none;
+            padding: 20px;
+            border-radius: 0 0 6px 6px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            min-height: 500px;
+            position: relative;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 6px 8px;
+            background: white;
+            border: 1px solid #A0A0A0;
+            border-radius: 3px;
+            font-size: 13px;
+            transition: all 0.2s;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1), 0 1px 0 rgba(255, 255, 255, 0.8);
+        }
+        
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #FF6B35;
+            box-shadow: 
+                inset 0 1px 2px rgba(0, 0, 0, 0.1),
+                0 0 0 2px rgba(255, 107, 53, 0.3),
+                0 1px 0 rgba(255, 255, 255, 0.8);
+        }
+        
+        button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 
+                0 4px 12px rgba(255, 107, 53, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        }
+        
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #F7931E 0%, #FFD700 100%);
+            transform: translateY(-2px);
+            box-shadow: 
+                0 6px 20px rgba(255, 107, 53, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.4);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #C41E3A 0%, #8B0000 100%);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 
+                0 4px 12px rgba(196, 30, 58, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn-danger:hover {
+            background: linear-gradient(135deg, #8B0000 0%, #C41E3A 100%);
+            transform: translateY(-2px);
+            box-shadow: 
+                0 6px 20px rgba(196, 30, 58, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #FFD700 0%, #F7931E 100%);
+            color: #333;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .status-bar {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 
+                inset 0 1px 0 rgba(255, 255, 255, 0.4),
+                0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+        
+        .status-dot.active {
+            background: linear-gradient(135deg, #FFD700 0%, #FF6B35 100%);
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .wallet-item, .holder-item, .trader-item {
+            background: rgba(255, 255, 255, 0.3);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border-left: 4px solid #FF6B35;
+            box-shadow: 
+                inset 0 1px 0 rgba(255, 255, 255, 0.4),
+                0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .wallet-item .address {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            word-break: break-all;
+        }
+        
+        .wallet-item .info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .wallet-item a {
+            color: #FF6B35;
+            text-decoration: none;
+            margin-top: 10px;
+            display: inline-block;
+            margin-right: 10px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .wallet-item a:hover {
+            color: #F7931E;
+            text-decoration: underline;
+            text-shadow: 0 0 8px rgba(255, 107, 53, 0.3);
+        }
+        
+        .results-container {
+            max-height: 600px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: rgba(0, 0, 0, 0.6);
+            text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5);
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #FF6B35;
+            font-weight: 600;
+            text-shadow: 0 2px 4px rgba(255, 107, 53, 0.3);
+        }
+        
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🕵️ Mugetsu-Style On-Chain Analyzer</h1>
+            <p>Comprehensive BONK/USD1 Analysis Tools</p>
+        </div>
+        
+        <div class="tabs">
+            <button class="tab-btn active" onclick="showTab('fresh')">🆕 Fresh Wallets</button>
+            <button class="tab-btn" onclick="showTab('analyzer')">📊 Wallet Analyzer</button>
+            <button class="tab-btn" onclick="showTab('funded')">💰 Funded Wallets</button>
+            <button class="tab-btn" onclick="showTab('floor')">📉 Floor Price</button>
+            <button class="tab-btn" onclick="showTab('github')">🔍 GitHub Check</button>
+            <button class="tab-btn" onclick="showTab('pumpfun')" style="filter: grayscale(100%);">⚫ PumpFun</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Fresh Wallets Tab -->
+        <div class="vista-window" id="fresh-window">
+            <div class="window-titlebar">
+                <div class="window-title">🆕 Fresh Wallet Scanner</div>
+                <div class="window-controls">
+                    <div class="window-btn">−</div>
+                    <div class="window-btn">□</div>
+                    <div class="window-btn close">×</div>
+                </div>
+            </div>
+            <div class="window-content">
+                <div id="fresh" class="tab-content active">
+            <div style="background: #F0F8FF; border: 1px solid #B0C4DE; padding: 12px; border-radius: 3px; margin-bottom: 20px; font-size: 13px; color: #333;">
+                <strong>📖 What this does:</strong> Scans a Solana DEX pool (Raydium, Orca, etc.) for wallets that have made swaps. 
+                Only alerts when a wallet has 10 or fewer total transactions (fresh/new wallets). 
+                Scans historical transactions from the selected time range, then monitors live for new activity.
+            </div>
+            <div class="form-group">
+                <label>Pool Address</label>
+                <input type="text" id="poolAddress" value="rnMLBLnUueJveGpLCS2BGsY3McJGRXZ8bqQ8eBWbonk" placeholder="Enter Raydium/Orca pool address">
+            </div>
+            <div class="form-group">
+                <label>Max Transaction Limit</label>
+                <input type="number" id="txLimit" value="10" min="1" max="100">
+            </div>
+            <div class="form-group">
+                <label>Time Range to Scan</label>
+                <select id="timeRange" onchange="updateEstimate('fresh')">
+                    <option value="0.5">30 minutes</option>
+                    <option value="1">1 hour</option>
+                    <option value="2">2 hours</option>
+                    <option value="4" selected>4 hours</option>
+                    <option value="6">6 hours</option>
+                    <option value="8">8 hours</option>
+                    <option value="12">12 hours</option>
+                </select>
+                <label style="font-size: 0.9em; color: #FF6B35; margin-top: 5px; display: block; font-weight: 600;">
+                    ⏱️ Estimated time: <span id="freshEstimate" style="color: #FFD700;">4-6 minutes</span>
+                </label>
+            </div>
+            <div class="status-bar">
+                <div class="status-indicator">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Ready</span>
+                </div>
+                <div>
+                    <button class="btn-primary" onclick="startScan()">▶ Start Scan</button>
+                    <button class="btn-danger" onclick="stopScan()">⏹ Stop</button>
+                    <button class="btn-secondary" onclick="resetScan()" style="margin-left: 5px;">🔄 Reset</button>
+                </div>
+            </div>
+            <div class="results-container" id="freshResults">
+                <div class="empty-state">No fresh wallets detected yet</div>
+            </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Wallet Analyzer Tab -->
+        <div class="vista-window" id="analyzer-window" style="display: none;">
+            <div class="window-titlebar">
+                <div class="window-title">📊 Wallet Analyzer</div>
+                <div class="window-controls">
+                    <div class="window-btn">−</div>
+                    <div class="window-btn">□</div>
+                    <div class="window-btn close">×</div>
+                </div>
+            </div>
+            <div class="window-content">
+                <div id="analyzer" class="tab-content">
+            <div style="background: #F0F8FF; border: 1px solid #B0C4DE; padding: 12px; border-radius: 3px; margin-bottom: 20px; font-size: 13px; color: #333;">
+                <strong>📖 What this does:</strong> Analyzes a wallet's profit and loss (PnL) for a specific token. 
+                Examines the last 300 transactions to calculate total bought, total sold, current balance, and net PnL. 
+                Perfect for tracking wallet performance on BONK/USD1.
+            </div>
+            <div class="form-group">
+                <label>Wallet Address</label>
+                <input type="text" id="analyzerWallet" placeholder="Enter Solana wallet address">
+            </div>
+            <div class="form-group">
+                <label>Token Address</label>
+                <input type="text" id="analyzerToken" value="DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263" placeholder="BONK token address">
+            </div>
+            <div class="form-group">
+                <label>Time Range to Analyze</label>
+                <select id="analyzerTimeRange" onchange="updateEstimate('analyzer')">
+                    <option value="0.5">30 minutes</option>
+                    <option value="1">1 hour</option>
+                    <option value="2">2 hours</option>
+                    <option value="4" selected>4 hours</option>
+                    <option value="6">6 hours</option>
+                    <option value="8">8 hours</option>
+                    <option value="12">12 hours</option>
+                </select>
+                <label style="font-size: 0.9em; color: #FF6B35; margin-top: 5px; display: block; font-weight: 600;">
+                    ⏱️ Estimated time: <span id="analyzerEstimate" style="color: #FFD700;">2-4 minutes</span>
+                </label>
+            </div>
+            <button class="btn-primary" onclick="analyzeWallet()">Analyze Wallet</button>
+            <div class="results-container" id="analyzerResults">
+                <div class="empty-state">Enter wallet and token addresses to analyze</div>
+            </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Funded Wallets Tab -->
+        <div class="vista-window" id="funded-window" style="display: none;">
+            <div class="window-titlebar">
+                <div class="window-title">💰 Funded Wallets</div>
+                <div class="window-controls">
+                    <div class="window-btn">−</div>
+                    <div class="window-btn">□</div>
+                    <div class="window-btn close">×</div>
+                </div>
+            </div>
+            <div class="window-content">
+                <div id="funded" class="tab-content">
+            <div style="background: #F0F8FF; border: 1px solid #B0C4DE; padding: 12px; border-radius: 3px; margin-bottom: 20px; font-size: 13px; color: #333;">
+                <strong>📖 What this does:</strong> Finds wallets that received funding (SOL/token transfers) and then immediately bought from the pool. 
+                Helps identify funded wallets that might be part of coordinated buying or bot activity. 
+                Scans transactions within the selected time range.
+            </div>
+            <div class="form-group">
+                <label>Pool Address</label>
+                <input type="text" id="fundedPool" value="rnMLBLnUueJveGpLCS2BGsY3McJGRXZ8bqQ8eBWbonk" placeholder="Enter pool address">
+            </div>
+            <div class="form-group">
+                <label>Time Range to Scan</label>
+                <select id="fundedTimeRange" onchange="updateEstimate('funded')">
+                    <option value="0.5">30 minutes</option>
+                    <option value="1">1 hour</option>
+                    <option value="2">2 hours</option>
+                    <option value="4">4 hours</option>
+                    <option value="6">6 hours</option>
+                    <option value="8">8 hours</option>
+                    <option value="12">12 hours</option>
+                    <option value="24" selected>24 hours</option>
+                </select>
+                <label style="font-size: 0.9em; color: #FF6B35; margin-top: 5px; display: block; font-weight: 600;">
+                    ⏱️ Estimated time: <span id="fundedEstimate" style="color: #FFD700;">5-8 minutes</span>
+                </label>
+            </div>
+            <button class="btn-primary" onclick="getFundedWallets()">Get Funded Wallets</button>
+            <div class="results-container" id="fundedResults">
+                <div class="empty-state">Click to find wallets that received funding</div>
+            </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- GitHub Check Tab -->
+        <div class="vista-window" id="github-window" style="display: none;">
+            <div class="window-titlebar">
+                <div class="window-title">🔍 GitHub Repository Check</div>
+                <div class="window-controls">
+                    <div class="window-btn">−</div>
+                    <div class="window-btn">□</div>
+                    <div class="window-btn close">×</div>
+                </div>
+            </div>
+            <div class="window-content">
+                <div id="github" class="tab-content">
+            <div style="background: #F0F8FF; border: 1px solid #B0C4DE; padding: 12px; border-radius: 3px; margin-bottom: 20px; font-size: 13px; color: #333;">
+                <strong>📖 What this does:</strong> Checks if a token has an associated GitHub repository. 
+                Verifies repository existence, activity, and legitimacy. Helps identify tokens with proper development backing.
+            </div>
+            <div class="form-group">
+                <label>Token Address</label>
+                <input type="text" id="githubToken" placeholder="Enter token mint address">
+            </div>
+            <div class="form-group">
+                <label>GitHub Repository URL (Optional - will search if not provided)</label>
+                <input type="text" id="githubRepo" placeholder="e.g., https://github.com/user/repo">
+            </div>
+            <button class="btn-primary" onclick="checkGitHub()">Check GitHub</button>
+            <div class="results-container" id="githubResults">
+                <div class="empty-state">Enter token address to check for GitHub repository</div>
+            </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- PumpFun Tab -->
+        <div class="vista-window" id="pumpfun-window" style="display: none; background: #000; color: #fff;">
+            <div class="window-titlebar" style="background: linear-gradient(to bottom, #1a1a1a 0%, #000 100%); border-bottom: 1px solid #333;">
+                <div class="window-title" style="color: #fff;">⚫ PumpFun Scanner</div>
+                <div class="window-controls">
+                    <div class="window-btn" style="background: #333; border-color: #555;">−</div>
+                    <div class="window-btn" style="background: #333; border-color: #555;">□</div>
+                    <div class="window-btn close" style="background: #333; border-color: #555;">×</div>
+                </div>
+            </div>
+            <div class="window-content" style="background: #000; color: #fff;">
+                <div id="pumpfun" class="tab-content">
+            <div style="background: #1a1a1a; border: 1px solid #333; padding: 12px; border-radius: 3px; margin-bottom: 20px; font-size: 13px; color: #fff;">
+                <strong>📖 What this does:</strong> Scans PumpFun platform for new token launches. 
+                Filters for PumpFun-only coins and provides analysis. This is a specialized scanner for PumpFun tokens.
+            </div>
+            <div class="form-group">
+                <label style="color: #fff;">PumpFun Token Address</label>
+                <input type="text" id="pumpfunToken" placeholder="Enter PumpFun token address" style="background: #1a1a1a; color: #fff; border-color: #333;">
+            </div>
+            <div class="form-group">
+                <label style="color: #fff;">Time Range to Scan</label>
+                <select id="pumpfunTimeRange" style="background: #1a1a1a; color: #fff; border-color: #333;">
+                    <option value="0.5">30 minutes</option>
+                    <option value="1">1 hour</option>
+                    <option value="2">2 hours</option>
+                    <option value="4" selected>4 hours</option>
+                    <option value="6">6 hours</option>
+                    <option value="8">8 hours</option>
+                    <option value="12">12 hours</option>
+                </select>
+            </div>
+            <button class="btn-primary" onclick="scanPumpFun()" style="background: linear-gradient(135deg, #333 0%, #000 100%); border-color: #555;">Scan PumpFun</button>
+            <div class="results-container" id="pumpfunResults" style="background: #1a1a1a; border-color: #333;">
+                <div class="empty-state" style="color: #888;">Enter PumpFun token address to scan</div>
+            </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Floor Price Tab -->
+        <div class="vista-window" id="floor-window" style="display: none;">
+            <div class="window-titlebar">
+                <div class="window-title">📉 Floor Price Tracker</div>
+                <div class="window-controls">
+                    <div class="window-btn">−</div>
+                    <div class="window-btn">□</div>
+                    <div class="window-btn close">×</div>
+                </div>
+            </div>
+            <div class="window-content">
+                <div id="floor" class="tab-content">
+            <div style="background: #F0F8FF; border: 1px solid #B0C4DE; padding: 12px; border-radius: 3px; margin-bottom: 20px; font-size: 13px; color: #333;">
+                <strong>📖 What this does:</strong> Tracks the floor price (minimum buy price) of a token in a pool over time. 
+                Monitors all buy transactions to find the lowest price paid, helping identify entry points and price support levels. 
+                Updates in real-time as new transactions occur.
+            </div>
+            <div class="form-group">
+                <label>Pool Address</label>
+                <input type="text" id="floorPool" value="rnMLBLnUueJveGpLCS2BGsY3McJGRXZ8bqQ8eBWbonk" placeholder="Enter pool address">
+            </div>
+            <div class="form-group">
+                <label>Time Range to Track</label>
+                <select id="floorTimeRange" onchange="updateEstimate('floor')">
+                    <option value="0.5">30 minutes</option>
+                    <option value="1">1 hour</option>
+                    <option value="2">2 hours</option>
+                    <option value="4" selected>4 hours</option>
+                    <option value="6">6 hours</option>
+                    <option value="8">8 hours</option>
+                    <option value="12">12 hours</option>
+                </select>
+                <label style="font-size: 0.9em; color: #FF6B35; margin-top: 5px; display: block; font-weight: 600;">
+                    ⏱️ Estimated time: <span id="floorEstimate" style="color: #FFD700;">3-5 minutes</span>
+                </label>
+            </div>
+            <button class="btn-primary" onclick="getFloorPrice()">Track Floor Price</button>
+            <div class="results-container" id="floorResults">
+                <div class="empty-state">Click to track floor price</div>
+            </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const socket = io();
+        let walletCount = 0;
+        
+        socket.on('connect', () => {
+            console.log('Connected');
+            updateStatus('Connected', false);
+        });
+        
+        socket.on('fresh_wallet', (data) => {
+            walletCount++;
+            addFreshWallet(data);
+        });
+        
+        socket.on('status', (data) => {
+            updateStatus(data.message, data.scanning);
+        });
+        
+        socket.on('error', (data) => {
+            alert('Error: ' + data.message);
+            updateStatus('Error occurred', false);
+        });
+        
+        function showTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            // Hide all vista windows (except header and tabs)
+            document.querySelectorAll('.vista-window').forEach(win => {
+                if (win.id && win.id.endsWith('-window')) {
+                    win.style.display = 'none';
+                }
+            });
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            // Show corresponding window
+            const window = document.getElementById(tabName + '-window');
+            if (window) {
+                window.style.display = 'block';
+            }
+            // Update tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
+        }
+        
+        function updateStatus(message, isScanning) {
+            document.getElementById('statusText').textContent = message;
+            const statusDot = document.getElementById('statusDot');
+            if (isScanning) {
+                statusDot.classList.add('active');
+            } else {
+                statusDot.classList.remove('active');
+            }
+        }
+        
+        function updateEstimate(tab) {
+            const timeRanges = {
+                'fresh': document.getElementById('timeRange'),
+                'analyzer': document.getElementById('analyzerTimeRange'),
+                'funded': document.getElementById('fundedTimeRange'),
+                'floor': document.getElementById('floorTimeRange'),
+                'pumpfun': document.getElementById('pumpfunTimeRange')
+            };
+            
+            const estimates = {
+                'fresh': document.getElementById('freshEstimate'),
+                'analyzer': document.getElementById('analyzerEstimate'),
+                'funded': document.getElementById('fundedEstimate'),
+                'floor': document.getElementById('floorEstimate'),
+                'github': null,
+                'pumpfun': null
+            };
+            
+            const selector = timeRanges[tab];
+            const estimateSpan = estimates[tab];
+            if (!selector || !estimateSpan) return;
+            
+            const hours = parseFloat(selector.value);
+            
+            // Calculate estimated time based on hours
+            const baseTimes = {
+                'fresh': {base: 1, perHour: 1},
+                'holders': {base: 2, perHour: 0.5},
+                'analyzer': {base: 1, perHour: 0.5},
+                'funded': {base: 2, perHour: 0.3},
+                'traders': {base: 3, perHour: 1.5},
+                'floor': {base: 1, perHour: 0.5}
+            };
+            
+            const config = baseTimes[tab] || {base: 2, perHour: 1};
+            const minTime = Math.round(config.base + (hours * config.perHour));
+            const maxTime = Math.round(minTime * 1.5);
+            
+            if (minTime < 1) {
+                estimateSpan.textContent = '< 1 minute';
+            } else if (minTime === maxTime) {
+                estimateSpan.textContent = `~${minTime} minute${minTime > 1 ? 's' : ''}`;
+            } else {
+                estimateSpan.textContent = `${minTime}-${maxTime} minutes`;
+            }
+        }
+        
+        function addFreshWallet(data) {
+            const results = document.getElementById('freshResults');
+            const emptyState = results.querySelector('.empty-state');
+            if (emptyState) emptyState.remove();
+            
+            const item = document.createElement('div');
+            item.className = 'wallet-item';
+            item.innerHTML = `
+                <div class="address">${data.wallet}</div>
+                <div class="info">
+                    <span>📊 Txs: ${data.tx_count}</span>
+                    <span>⏰ ${data.tx_time || 'N/A'}</span>
+                </div>
+                <a href="https://solscan.io/account/${data.wallet}" target="_blank">View Wallet</a>
+                <a href="https://solscan.io/tx/${data.tx_sig}" target="_blank">View Transaction</a>
+            `;
+            results.insertBefore(item, results.firstChild);
+        }
+        
+        async function startScan() {
+            const poolAddress = document.getElementById('poolAddress').value.trim();
+            const txLimit = parseInt(document.getElementById('txLimit').value) || 10;
+            const timeRange = parseFloat(document.getElementById('timeRange').value) || 4;
+            
+            try {
+                const response = await fetch('/api/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({pool: poolAddress, limit: txLimit, hours: timeRange})
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    document.getElementById('freshResults').innerHTML = '<div class="empty-state">Scanning...</div>';
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function stopScan() {
+            try {
+                await fetch('/api/stop', {method: 'POST'});
+                updateStatus('Scan stopped', false);
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function resetScan() {
+            // Stop any running scan first
+            try {
+                await fetch('/api/stop', {method: 'POST'});
+            } catch (error) {
+                // Ignore if already stopped
+            }
+            
+            // Clear all results
+            document.getElementById('freshResults').innerHTML = '<div class="empty-state">No fresh wallets detected yet</div>';
+            
+            // Reset status
+            updateStatus('Ready to scan', false);
+            
+            // Reset wallet count
+            walletCount = 0;
+        }
+        
+        async function analyzeWallet() {
+            const wallet = document.getElementById('analyzerWallet').value.trim();
+            const token = document.getElementById('analyzerToken').value.trim();
+            const timeRange = parseFloat(document.getElementById('analyzerTimeRange').value) || 4;
+            const results = document.getElementById('analyzerResults');
+            results.innerHTML = '<div class="loading">Analyzing wallet PnL...</div>';
+            
+            if (!wallet) {
+                results.innerHTML = '<div class="empty-state">Please enter a wallet address</div>';
+                return;
+            }
+            
+            if (!token) {
+                results.innerHTML = '<div class="empty-state">Please enter a token address</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/wallet_analyzer', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({wallet, token, timeRange})
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    if (data.data && data.data.wallet) {
+                        displayAnalyzer(data.data, results);
+                    } else {
+                        results.innerHTML = `
+                            <div class="wallet-item">
+                                <div class="address">Wallet: ${wallet.substring(0, 20)}...</div>
+                                <div class="info">
+                                    <span>Token: ${token.substring(0, 20)}...</span>
+                                    <span>Time Range: ${timeRange} hours</span>
+                                </div>
+                                <div style="margin-top: 10px; color: #666; font-size: 0.9em;">
+                                    Wallet analyzer: Would parse last 300 transactions to calculate PnL.
+                                    Currently showing placeholder - full implementation requires transaction parsing.
+                                </div>
+                                <a href="https://solscan.io/account/${wallet}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-top: 10px; display: inline-block;">View Wallet on Solscan →</a>
+                            </div>
+                        `;
+                    }
+                } else {
+                    results.innerHTML = `<div class="empty-state">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function getFundedWallets() {
+            const pool = document.getElementById('fundedPool').value.trim();
+            const timeRange = parseFloat(document.getElementById('fundedTimeRange').value) || 24;
+            const results = document.getElementById('fundedResults');
+            results.innerHTML = '<div class="loading">Analyzing funded wallets...</div>';
+            
+            if (!pool) {
+                results.innerHTML = '<div class="empty-state">Please enter a pool address</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/funded', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({pool, hours: timeRange, timeRange: timeRange})
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    if (data.wallets && data.wallets.length > 0) {
+                        displayFunded(data.wallets, results);
+                    } else {
+                        results.innerHTML = `
+                            <div class="wallet-item">
+                                <div class="address">Pool: ${pool.substring(0, 20)}...</div>
+                                <div class="info">
+                                    <span>Time Range: ${timeRange} hours</span>
+                                    <span>Status: Analysis complete</span>
+                                </div>
+                                <div style="margin-top: 10px; color: #666; font-size: 0.9em;">
+                                    Funded wallets: Would scan for wallets that received funding and then bought from the pool.
+                                    Currently showing placeholder - full implementation requires funding transaction analysis.
+                                </div>
+                                <a href="https://solscan.io/account/${pool}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-top: 10px; display: inline-block;">View Pool on Solscan →</a>
+                            </div>
+                        `;
+                    }
+                } else {
+                    results.innerHTML = `<div class="empty-state">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function checkGitHub() {
+            const token = document.getElementById('githubToken').value.trim();
+            const repo = document.getElementById('githubRepo').value.trim();
+            const results = document.getElementById('githubResults');
+            results.innerHTML = '<div class="loading">Checking GitHub repository...</div>';
+            
+            if (!token && !repo) {
+                results.innerHTML = '<div class="empty-state">Please enter a token address or GitHub repository URL</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/github_check', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({token, repo})
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    displayGitHub(data, results);
+                } else {
+                    results.innerHTML = `<div class="empty-state">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function scanPumpFun() {
+            const token = document.getElementById('pumpfunToken').value.trim();
+            const timeRange = parseFloat(document.getElementById('pumpfunTimeRange').value) || 4;
+            const results = document.getElementById('pumpfunResults');
+            results.innerHTML = '<div class="loading" style="color: #fff;">Scanning PumpFun tokens...</div>';
+            
+            if (!token) {
+                results.innerHTML = '<div class="empty-state" style="color: #888;">Please enter a PumpFun token address</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/pumpfun_scan', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({token, timeRange})
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    displayPumpFun(data, results);
+                } else {
+                    results.innerHTML = `<div class="empty-state" style="color: #888;">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="empty-state" style="color: #888;">Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function getFloorPrice() {
+            const pool = document.getElementById('floorPool').value.trim();
+            const timeRange = parseFloat(document.getElementById('floorTimeRange').value) || 4;
+            const results = document.getElementById('floorResults');
+            results.innerHTML = '<div class="loading">Tracking floor price...</div>';
+            
+            if (!pool) {
+                results.innerHTML = '<div class="empty-state">Please enter a pool address</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/floor_price', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({pool, hours: timeRange, timeRange: timeRange})
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    if (data.data) {
+                        const floor = data.data;
+                        results.innerHTML = `
+                            <div class="wallet-item">
+                                <div class="address" style="font-size: 1.2em; font-weight: bold; color: #FF6B35;">
+                                    📉 Floor Price: ${floor.floor_price ? floor.floor_price.toFixed(9) : 'N/A'} SOL per token
+                                </div>
+                                <div class="info">
+                                    <span>Current Price: ${floor.current_price ? floor.current_price.toFixed(9) : 'N/A'} SOL</span>
+                                    <span>Time Range: ${timeRange} hours</span>
+                                </div>
+                                <div class="info" style="margin-top: 10px;">
+                                    <span>Floor Price Time: ${floor.floor_time || 'N/A'}</span>
+                                    <span>Total Buys Analyzed: ${floor.total_buys_analyzed || 0}</span>
+                                </div>
+                                ${floor.floor_tx ? `<a href="https://solscan.io/tx/${floor.floor_tx}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-top: 10px; display: inline-block;">View Floor Price Transaction →</a>` : ''}
+                                <a href="https://solscan.io/account/${pool}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-top: 10px; display: inline-block; margin-left: 10px;">View Pool →</a>
+                            </div>
+                        `;
+                    } else {
+                        results.innerHTML = '<div class="empty-state">No buy transactions found in the specified time range</div>';
+                    }
+                } else {
+                    results.innerHTML = `<div class="empty-state">Error: ${data.error || 'Failed to get floor price'}</div>`;
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
+            }
+        }
+        
+        function displayGitHub(data, container) {
+            if (!data || !data.repo) {
+                container.innerHTML = '<div class="empty-state">No GitHub repository found</div>';
+                return;
+            }
+            container.innerHTML = `
+                <div class="wallet-item">
+                    <div class="address" style="font-weight: bold;">${data.repo.name || 'Repository'}</div>
+                    <div class="info" style="margin-top: 10px;">
+                        <span><strong>URL:</strong> <a href="${data.repo.url}" target="_blank">${data.repo.url}</a></span>
+                    </div>
+                    <div class="info" style="margin-top: 5px;">
+                        <span><strong>Stars:</strong> ${data.repo.stars || 0}</span>
+                        <span><strong>Forks:</strong> ${data.repo.forks || 0}</span>
+                        <span><strong>Last Updated:</strong> ${data.repo.last_updated || 'N/A'}</span>
+                    </div>
+                    <div class="info" style="margin-top: 5px;">
+                        <span><strong>Status:</strong> ${data.repo.exists ? '✅ Found' : '❌ Not Found'}</span>
+                        <span><strong>Verified:</strong> ${data.repo.verified ? '✅ Yes' : '❌ No'}</span>
+                    </div>
+                    ${data.repo.description ? `<div style="margin-top: 10px; color: #666; font-size: 0.9em;">${data.repo.description}</div>` : ''}
+                </div>
+            `;
+        }
+        
+        function displayPumpFun(data, container) {
+            if (!data || !data.tokens || data.tokens.length === 0) {
+                container.innerHTML = '<div class="empty-state" style="color: #888;">No PumpFun tokens found</div>';
+                return;
+            }
+            container.innerHTML = data.tokens.map(t => `
+                <div class="wallet-item" style="background: #1a1a1a; border-color: #333; color: #fff;">
+                    <div class="address" style="font-weight: bold; color: #fff;">${t.name || 'Token'}</div>
+                    <div class="info" style="margin-top: 10px; color: #ccc;">
+                        <span><strong>Address:</strong> ${t.address || 'N/A'}</span>
+                    </div>
+                    <div class="info" style="margin-top: 5px; color: #ccc;">
+                        <span><strong>Price:</strong> ${t.price || 'N/A'} SOL</span>
+                        <span><strong>Market Cap:</strong> ${t.market_cap || 'N/A'}</span>
+                    </div>
+                    <a href="https://pump.fun/${t.address}" target="_blank" style="color: #fff; text-decoration: none; margin-top: 10px; display: inline-block;">View on PumpFun →</a>
+                </div>
+            `).join('');
+        }
+        
+        function displayAnalyzer(data, container) {
+            if (!data) {
+                container.innerHTML = '<div class="empty-state">No data available</div>';
+                return;
+            }
+            const pnlColor = data.pnl >= 0 ? '#00ff00' : '#ff0000';
+            const pnlSign = data.pnl >= 0 ? '+' : '';
+            container.innerHTML = `
+                <div class="wallet-item">
+                    <div class="address" style="font-size: 1.1em; font-weight: bold;">Wallet: ${data.wallet.substring(0, 20)}...</div>
+                    <div class="info" style="margin-top: 15px;">
+                        <span><strong>Total Bought:</strong> ${data.total_bought || 0} tokens</span>
+                        <span><strong>Total Sold:</strong> ${data.total_sold || 0} tokens</span>
+                        <span><strong>Current Balance:</strong> ${data.current_balance || 0} tokens</span>
+                    </div>
+                    <div class="info" style="margin-top: 10px;">
+                        <span><strong>Buy Count:</strong> ${data.buy_count || 0}</span>
+                        <span><strong>Sell Count:</strong> ${data.sell_count || 0}</span>
+                    </div>
+                    <div class="info" style="margin-top: 10px;">
+                        <span><strong>Avg Buy Price:</strong> ${data.avg_buy_price ? data.avg_buy_price.toFixed(9) : 0} SOL</span>
+                        <span><strong>Avg Sell Price:</strong> ${data.avg_sell_price ? data.avg_sell_price.toFixed(9) : 0} SOL</span>
+                    </div>
+                    <div class="info" style="margin-top: 10px;">
+                        <span><strong>Total SOL Spent:</strong> ${data.total_sol_spent || 0} SOL</span>
+                        <span><strong>Total SOL Received:</strong> ${data.total_sol_received || 0} SOL</span>
+                    </div>
+                    <div class="info" style="margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.1); border-radius: 5px;">
+                        <span style="font-size: 1.2em; font-weight: bold; color: ${pnlColor};">
+                            💰 Total PnL: ${pnlSign}${data.pnl || 0} SOL
+                        </span>
+                        <span style="margin-left: 20px;">
+                            Realized: ${data.realized_pnl || 0} SOL | Unrealized: ${data.unrealized_pnl || 0} SOL
+                        </span>
+                    </div>
+                    <a href="https://solscan.io/account/${data.wallet}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-top: 10px; display: inline-block;">View Wallet on Solscan →</a>
+                </div>
+            `;
+        }
+        
+        function displayFunded(wallets, container) {
+            if (!wallets || wallets.length === 0) {
+                container.innerHTML = '<div class="empty-state">No funded wallets found</div>';
+                return;
+            }
+            container.innerHTML = wallets.map(w => `
+                <div class="wallet-item">
+                    <div class="address" style="font-weight: bold;">${w.wallet ? w.wallet.substring(0, 20) + '...' : 'N/A'}</div>
+                    <div class="info" style="margin-top: 10px;">
+                        <span><strong>Funding Amount:</strong> ${w.funding_amount || 0} SOL</span>
+                        <span><strong>Funding Time:</strong> ${w.funding_time || 'N/A'}</span>
+                    </div>
+                    <div class="info" style="margin-top: 5px;">
+                        <span><strong>Buy Time:</strong> ${w.buy_time || 'N/A'}</span>
+                    </div>
+                    <div style="margin-top: 10px;">
+                        ${w.funding_tx ? `<a href="https://solscan.io/tx/${w.funding_tx}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-right: 10px;">View Funding TX →</a>` : ''}
+                        ${w.buy_tx ? `<a href="https://solscan.io/tx/${w.buy_tx}" target="_blank" style="color: #FF6B35; text-decoration: none; margin-right: 10px;">View Buy TX →</a>` : ''}
+                        <a href="https://solscan.io/account/${w.wallet}" target="_blank" style="color: #FF6B35; text-decoration: none;">View Wallet →</a>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Initialize estimates on page load
+        function initEstimates() {
+            ['fresh', 'holders', 'analyzer', 'funded', 'traders', 'floor'].forEach(tab => {
+                updateEstimate(tab);
+            });
+        }
+        
+        // Initialize on page load
+        initEstimates();
+    </script>
+</body>
+</html>
+
