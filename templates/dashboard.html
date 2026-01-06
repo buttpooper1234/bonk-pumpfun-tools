@@ -514,7 +514,7 @@
                 <div class="desktop-icon-image"><i class="fab fa-github"></i></div>
                 <div class="desktop-icon-text">GitHub Check</div>
             </div>
-            <div class="desktop-icon" onclick="openWindow('pumpfun'); switchToPumpFunTheme();">
+            <div class="desktop-icon" onclick="switchToPumpFunTheme();">
                 <div class="desktop-icon-image"><i class="fas fa-coins" style="color: #00ff88;"></i></div>
                 <div class="desktop-icon-text">PumpFun</div>
             </div>
@@ -555,7 +555,7 @@
         <div class="start-menu-item" onclick="openWindow('github'); closeStartMenu();">
             <i class="fab fa-github"></i> GitHub Check
         </div>
-        <div class="start-menu-item" onclick="openWindow('pumpfun'); closeStartMenu(); switchToPumpFunTheme();">
+        <div class="start-menu-item" onclick="closeStartMenu(); switchToPumpFunTheme();">
             <i class="fas fa-coins"></i> PumpFun
         </div>
         <div class="start-menu-item" style="border-top: 2px solid #808080; margin-top: 4px;">
@@ -738,38 +738,6 @@
                     </div>
                 `,
                 isPumpfun: false
-            },
-            pumpfun: {
-                title: '💚 PumpFun Scanner (PumpFun Coins Only)',
-                content: `
-                    <div style="background: #f0fff4; border: 1px solid #00ff88; padding: 8px; margin-bottom: 8px; font-size: 11px; color: #000;">
-                        <strong>📖 What this does:</strong> Scans PumpFun platform for new token launches. Filters for PumpFun-only coins.
-                    </div>
-                    <div class="form-group">
-                        <label>PumpFun Token Address</label>
-                        <input type="text" id="pumpfunToken" placeholder="Enter PumpFun token address">
-                    </div>
-                    <div class="form-group">
-                        <label>Time Range</label>
-                        <select id="pumpfunTimeRange">
-                            <option value="0.5">30 minutes</option>
-                            <option value="1">1 hour</option>
-                            <option value="2">2 hours</option>
-                            <option value="4" selected>4 hours</option>
-                            <option value="6">6 hours</option>
-                            <option value="8">8 hours</option>
-                            <option value="12">12 hours</option>
-                            <option value="24">1 day</option>
-                            <option value="48">2 days</option>
-                            <option value="72">3 days</option>
-                        </select>
-                    </div>
-                    <button class="btn-primary" onclick="scanPumpFun()">Scan PumpFun</button>
-                    <div class="results-container" id="pumpfunResults">
-                        <div class="empty-state">Enter PumpFun token address to scan</div>
-                    </div>
-                `,
-                isPumpfun: true
             }
         };
         
@@ -787,8 +755,8 @@
             window.className = 'window active';
             window.id = windowId + '-window';
             
-            // Apply PumpFun theme if it's a PumpFun tool OR if we're in PumpFun theme mode
-            if (template.isPumpfun || (isPumpFunTheme && ['fresh', 'analyzer', 'funded', 'floor'].includes(windowId))) {
+            // Apply PumpFun theme if we're in PumpFun theme mode
+            if (isPumpFunTheme && ['fresh', 'analyzer', 'funded', 'floor'].includes(windowId)) {
                 window.classList.add('pumpfun-theme');
             }
             
@@ -946,9 +914,6 @@
                     <button class="btn-primary" onclick="openWindow('floor');" style="padding: 16px; font-size: 14px; background: linear-gradient(to bottom, #00ff88, #00cc6a);">
                         📉 Floor Price
                     </button>
-                    <button class="btn-primary" onclick="openWindow('pumpfun');" style="padding: 16px; font-size: 14px; background: linear-gradient(to bottom, #00ff88, #00cc6a);">
-                        💚 PumpFun Scanner
-                    </button>
                     <button class="btn-primary" onclick="openWindow('github');" style="padding: 16px; font-size: 14px; background: linear-gradient(to bottom, #00ff88, #00cc6a);">
                         🔍 GitHub Check
                     </button>
@@ -960,7 +925,6 @@
                         <li><strong>Wallet Analyzer:</strong> Analyzes profit and loss for PumpFun tokens</li>
                         <li><strong>Funded Wallets:</strong> Finds wallets that received funding and bought PumpFun coins</li>
                         <li><strong>Floor Price:</strong> Tracks minimum buy price from PumpFun pool transactions</li>
-                        <li><strong>PumpFun Scanner:</strong> Scans PumpFun platform for new token launches</li>
                         <li><strong>GitHub Check:</strong> AI-powered analysis of GitHub repositories</li>
                     </ul>
                 </div>
@@ -969,6 +933,8 @@
         
         function closeWindow(windowId) {
             if (windows[windowId]) {
+                // Stop any running scan when closing any tool window
+                stopScan();
                 windows[windowId].remove();
                 delete windows[windowId];
                 updateTaskbar();
@@ -1036,6 +1002,26 @@
             
             Object.keys(windows).forEach(windowId => {
                 const template = windowTemplates[windowId];
+                if (!template) {
+                    // Handle help window which doesn't have a template
+                    if (windowId === 'help') {
+                        const isPumpFunTheme = document.body.classList.contains('pumpfun-theme');
+                        const tab = document.createElement('div');
+                        tab.className = 'taskbar-tab';
+                        if (windows[windowId].classList.contains('active')) {
+                            tab.classList.add('active');
+                        }
+                        tab.textContent = `❓ Help - ${isPumpFunTheme ? 'PumpFun' : 'BONK'}`;
+                        tab.onclick = () => {
+                            if (windows[windowId].style.display === 'none') {
+                                windows[windowId].style.display = 'block';
+                            }
+                            focusWindow(windowId);
+                        };
+                        taskbarTabs.appendChild(tab);
+                    }
+                    return;
+                }
                 const tab = document.createElement('div');
                 tab.className = 'taskbar-tab';
                 if (template.isPumpfun) {
@@ -1081,10 +1067,14 @@
         
         // Theme switching
         function switchToPumpFunTheme() {
+            // Stop any running scan when switching themes
+            stopScan();
             document.body.classList.add('pumpfun-theme');
         }
         
         function switchToBonkTheme() {
+            // Stop any running scan when switching themes
+            stopScan();
             document.body.classList.remove('pumpfun-theme');
         }
         
@@ -1370,54 +1360,6 @@
             } catch (error) {
                 results.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
             }
-        }
-        
-        async function scanPumpFun() {
-            const token = document.getElementById('pumpfunToken').value.trim();
-            const timeRange = parseFloat(document.getElementById('pumpfunTimeRange').value) || 4;
-            const results = document.getElementById('pumpfunResults');
-            results.innerHTML = '<div class="loading">Scanning PumpFun tokens...</div>';
-            
-            if (!token) {
-                results.innerHTML = '<div class="empty-state">Please enter a PumpFun token address</div>';
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/pumpfun_scan', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({token, timeRange})
-                });
-                const data = await response.json();
-                if (response.ok) {
-                    displayPumpFun(data, results);
-                } else {
-                    results.innerHTML = `<div class="empty-state">Error: ${data.error}</div>`;
-                }
-            } catch (error) {
-                results.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
-            }
-        }
-        
-        function displayPumpFun(data, container) {
-            if (!data || !data.tokens || data.tokens.length === 0) {
-                container.innerHTML = '<div class="empty-state">No PumpFun tokens found</div>';
-                return;
-            }
-            container.innerHTML = data.tokens.map(t => `
-                <div class="wallet-item">
-                    <div class="address" style="font-weight: bold; color: #00aa55;">${t.name || 'Token'}</div>
-                    <div class="info" style="margin-top: 10px;">
-                        <span><strong>Address:</strong> ${t.address || 'N/A'}</span>
-                    </div>
-                    <div class="info" style="margin-top: 5px;">
-                        <span><strong>Price:</strong> ${t.price || 'N/A'} SOL</span>
-                        <span><strong>Market Cap:</strong> ${t.market_cap || 'N/A'}</span>
-                    </div>
-                    <a href="https://pump.fun/${t.address}" target="_blank" style="color: #00ff88; text-decoration: none; margin-top: 10px; display: inline-block; font-weight: bold;">View on PumpFun →</a>
-                </div>
-            `).join('');
         }
         
         function displayGitHub(data, container) {

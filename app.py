@@ -166,6 +166,20 @@ def get_wallet_token_balance(wallet_address, token_mint):
         print(f"[DEBUG] Error checking token balance: {e}")
         return 0
 
+def is_pumpswap_pool(pool_address):
+    """Check if pool address is owned by PumpSwap program"""
+    if client is None:
+        return False
+    try:
+        pool_pubkey = Pubkey.from_string(pool_address)
+        account_info = client.get_account_info(pool_pubkey, encoding="jsonParsed")
+        if account_info.value and account_info.value.owner:
+            owner = str(account_info.value.owner)
+            return owner == PUMPSWAP_PROGRAM_ID
+    except Exception as e:
+        print(f"[DEBUG] Error checking PumpSwap pool: {e}")
+    return False
+
 def get_token_mint_from_pool(pool_address):
     """Extract token mint address from pool"""
     if client is None:
@@ -210,7 +224,7 @@ def get_token_mint_from_transaction(tx):
     return None
 
 def analyze_transaction(tx_sig, check_time=None, tx_limit=None, pool_address=None, token_mint=None):
-    """Analyze transaction for fresh wallets - only returns wallets currently holding tokens"""
+    """Analyze transaction for fresh wallets - shows all wallets including those that sold"""
     if client is None:
         return False
     if tx_limit is None:
@@ -228,18 +242,97 @@ def analyze_transaction(tx_sig, check_time=None, tx_limit=None, pool_address=Non
 
         details = tx.value.transaction
         meta = tx.value.transaction.meta
-        buyer = details.transaction.message.account_keys[0].pubkey
-        buyer_address = str(buyer)
+        # Try to find the buyer from account keys (first signer is usually the buyer)
+        buyer_address = None
+        account_keys = details.transaction.message.account_keys
+        if account_keys and len(account_keys) > 0:
+            # First account is usually the signer/buyer
+            buyer = account_keys[0].pubkey
+            buyer_address = str(buyer)
+        
+        # If we can't find buyer from account keys, try to find from token balance changes
+        if not buyer_address and meta.post_token_balances:
+            # Look for accounts that received tokens (buyers)
+            for post_bal in meta.post_token_balances:
+                if post_bal.owner and post_bal.ui_token_amount.ui_amount:
+                    amount = float(post_bal.ui_token_amount.ui_amount or 0)
+                    if amount > 0:
+                        # Check if this account had less tokens before
+                        pre_amount = 0
+                        for pre_bal in (meta.pre_token_balances or []):
+                            if pre_bal.account_index == post_bal.account_index and pre_bal.mint == post_bal.mint:
+                                pre_amount = float(pre_bal.ui_token_amount.ui_amount or 0)
+                                break
+                        if amount > pre_amount:
+                            buyer_address = str(post_bal.owner)
+                            break
+        
+        if not buyer_address:
+            return False
 
         # OPTIMIZED: Check swap first before expensive wallet check
-        if not meta or not meta.log_messages:
+        if not meta:
             return False
             
-        logs = meta.log_messages
+        logs = meta.log_messages or []
+        # Check for various transaction types: Swap (DEX), Buy/Sell (PumpFun), or token transfers
         is_swap = any("Swap" in log or "Instruction: Swap" in log for log in logs)
+        is_pumpfun = any(
+            "Buy" in log or "Sell" in log or 
+            "pump" in log.lower() or 
+            PUMPFUN_PROGRAM_ID in log or
+            PUMPSWAP_PROGRAM_ID in log or
+            "pumpswap" in log.lower() or
+            "Instruction: Migrate" in log or
+            "migrate" in log.lower()
+            for log in logs
+        )
         
-        if is_swap:
-            tx_count = get_wallet_tx_count(buyer, tx_limit)
+        # Also check account keys for program involvement
+        account_keys = details.transaction.message.account_keys
+        has_pumpfun_program = False
+        if account_keys:
+            for key in account_keys:
+                try:
+                    key_str = str(key.pubkey)
+                    if key_str == PUMPFUN_PROGRAM_ID or key_str == PUMPSWAP_PROGRAM_ID:
+                        has_pumpfun_program = True
+                        break
+                except:
+                    continue
+        # Also check for token balance changes which indicate a buy/sell
+        # This is the most reliable way - check if buyer received tokens
+        has_token_balance_change = False
+        if meta.post_token_balances:
+            # Check if buyer_address received any tokens
+            for post_bal in meta.post_token_balances:
+                # Check if this balance belongs to the buyer
+                if post_bal.owner and str(post_bal.owner) == buyer_address:
+                    post_amount = float(post_bal.ui_token_amount.ui_amount or 0)
+                    if post_amount > 0:
+                        # Find corresponding pre balance
+                        pre_amount = 0
+                        if meta.pre_token_balances:
+                            for pre_bal in meta.pre_token_balances:
+                                if (pre_bal.account_index == post_bal.account_index and 
+                                    pre_bal.mint == post_bal.mint):
+                                    pre_amount = float(pre_bal.ui_token_amount.ui_amount or 0)
+                                    break
+                        # If post amount > pre amount, buyer received tokens (it's a buy)
+                        if post_amount > pre_amount:
+                            has_token_balance_change = True
+                            break
+                if has_token_balance_change:
+                    break
+        
+        # Accept if it's a swap, PumpFun transaction, PumpSwap transaction, or has token balance increase
+        if is_swap or is_pumpfun or has_pumpfun_program or has_token_balance_change:
+            # Convert buyer_address back to Pubkey for get_wallet_tx_count
+            try:
+                buyer_pubkey = Pubkey.from_string(buyer_address)
+            except:
+                return False
+            tx_count = get_wallet_tx_count(buyer_pubkey, tx_limit)
             
             if tx_count <= tx_limit:
                 # Get token mint if not provided
@@ -515,6 +608,10 @@ def get_logs():
 
 # ========== NEW MUGETSU-STYLE FEATURES ==========
 BONK_TOKEN = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
+PUMPFUN_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
+PUMPSWAP_PROGRAM_ID = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"
+PUMPFUN_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
+PUMPSWAP_PROGRAM_ID = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"
 
 def get_token_holders(token_address, limit=50):
     """Get top token holders by scanning transactions and tracking balances"""
